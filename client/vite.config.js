@@ -7,13 +7,18 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Forward all /api/* and /auth/* requests to the Express server during dev.
-      // In production, the client uses VITE_API_URL instead (set on Vercel in Phase 11).
+      // All /api/* requests go to the Express server.
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
-      '/auth': {
+      // Only proxy the SERVER-side auth routes. /auth/callback is a
+      // CLIENT-side React Router route (AuthCallback.jsx) and must be
+      // served by Vite's SPA fallback, not forwarded to Express.
+      //
+      // Regex matches: /auth/github, /auth/github/callback, /auth/me, /auth/logout
+      // Does NOT match: /auth/callback (client route)
+      '^/auth/(github|me|logout)': {
         target: 'http://localhost:5000',
         changeOrigin: true,
       },

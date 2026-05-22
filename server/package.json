@@ -7,14 +7,22 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node --use-system-ca src/index.js"
   },
   "license": "ISC",
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "mongoose": "^9.6.2"
+    "express-session": "^1.19.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.6.2",
+    "octokit": "^5.0.5",
+    "p-limit": "^7.3.0",
+    "passport": "^0.7.0",
+    "passport-github2": "^0.1.12",
+    "simple-git": "^3.36.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
