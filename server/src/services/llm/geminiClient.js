@@ -4,6 +4,12 @@ import { synthToolCallId, parseArgs } from './types.js';
 // Convert our normalized message list into Gemini's contents[] format.
 // Gemini uses 'user' and 'model' roles; tool results come back as
 // 'function' role parts; the system message is set separately.
+//
+// IMPORTANT for Gemini 3.x: when we feed a previous tool_use response back,
+// we MUST preserve the per-tool-call `thoughtSignature` the model returned.
+// We stash it on each tool call as `_thoughtSignature` when receiving, and
+// re-emit it in the same position when sending. Missing this returns:
+//   400 "Function call is missing a thought_signature"
 function toGeminiContents(messages) {
   const contents = [];
   let systemInstruction = null;
@@ -22,7 +28,9 @@ function toGeminiContents(messages) {
       if (m.content) parts.push({ text: m.content });
       if (m.toolCalls?.length) {
         for (const tc of m.toolCalls) {
-          parts.push({ functionCall: { name: tc.name, args: tc.arguments } });
+          const part = { functionCall: { name: tc.name, args: tc.arguments } };
+          if (tc._thoughtSignature) part.thoughtSignature = tc._thoughtSignature;
+          parts.push(part);
         }
       }
       contents.push({ role: 'model', parts });
@@ -91,21 +99,23 @@ export async function chat({ messages, tools, model }) {
   const result = await generativeModel.generateContent({ contents });
   const response = result.response;
 
-  // Pull tool calls (if any) out of the response candidates.
-  const functionCalls = response.functionCalls?.() ?? [];
-  const toolCalls = functionCalls.map((fc, i) => ({
-    id: synthToolCallId(fc.name, i),
-    name: fc.name,
-    arguments: parseArgs(fc.args),
-  }));
-
-  // Text is best-effort — when the model only returned function calls,
-  // calling .text() can throw. Guard it.
+  // Walk the candidate parts directly so we can capture the per-tool-call
+  // `thoughtSignature` that Gemini 3.x requires we echo back next turn.
+  const parts = response.candidates?.[0]?.content?.parts ?? [];
+  const toolCalls = [];
   let text = null;
-  try {
-    text = response.text() ?? null;
-  } catch {
-    text = null;
+  let idx = 0;
+  for (const p of parts) {
+    if (p.functionCall) {
+      toolCalls.push({
+        id: synthToolCallId(p.functionCall.name, idx++),
+        name: p.functionCall.name,
+        arguments: parseArgs(p.functionCall.args),
+        _thoughtSignature: p.thoughtSignature ?? null,
+      });
+    } else if (p.text && !p.thought) {
+      text = (text ?? '') + p.text;
+    }
   }
 
   const finishReason =

@@ -13,19 +13,87 @@ const FAILOVER_ORDER = ['gemini', 'claude', 'groq'];
 const RATE_LIMIT_STATUS = new Set([429]);
 const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
 
-function isRetryable(err) {
-  if (err.code === 'NO_API_KEY') return true; // try the next provider
+// Process-lifetime cache: once a provider returns a billing/quota error,
+// we skip it for the rest of the process rather than burning a fallback
+// attempt on every request. Lazy-initialized because LLM_DISABLED_PROVIDERS
+// from .env isn't available at module-load time (ESM import hoisting).
+let _disabledProviders = null;
+function disabledProviders() {
+  if (_disabledProviders) return _disabledProviders;
+  _disabledProviders = new Map();
+  const envList = (process.env.LLM_DISABLED_PROVIDERS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const name of envList) {
+    _disabledProviders.set(name, 'env_disabled');
+  }
+  return _disabledProviders;
+}
+
+function isTransient(err) {
   const status = err.status ?? err.response?.status;
   if (status && (RATE_LIMIT_STATUS.has(status) || TRANSIENT_STATUS.has(status))) {
     return true;
   }
-  // Network errors, DNS, TLS — anything without an HTTP status — also retryable.
   if (!status && (err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND')) {
     return true;
   }
+  return false;
+}
+
+function isRetryable(err) {
+  if (err.code === 'NO_API_KEY') return true; // try the next provider
+  if (isTransient(err)) return true;
   // Zscaler block pages come back as 403 with HTML; treat as retryable to fall over.
+  const status = err.status ?? err.response?.status;
   if (status === 403 && err.message?.includes?.('Zscaler')) return true;
   return false;
+}
+
+// Detect provider-side "this account/key won't work, period" failures so we
+// don't keep retrying. Permanent-disable patterns we know about.
+function detectPermanentDisable(providerName, err) {
+  const msg = (err.message ?? '').toLowerCase();
+  if (providerName === 'claude') {
+    if (msg.includes('credit balance is too low')) return 'no_credit';
+    if (msg.includes('invalid x-api-key') || msg.includes('authentication_error')) return 'bad_key';
+  }
+  if (providerName === 'gemini') {
+    if (msg.includes('api key not valid') || msg.includes('api_key_invalid')) return 'bad_key';
+  }
+  if (providerName === 'groq') {
+    if (msg.includes('invalid api key')) return 'bad_key';
+  }
+  return null;
+}
+
+// Run one provider with one transient-retry. Returns the response or rethrows.
+async function callWithRetry(providerName, args) {
+  const client = CLIENTS[providerName];
+  let lastErr;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      return await client.chat(args);
+    } catch (err) {
+      lastErr = err;
+      const disable = detectPermanentDisable(providerName, err);
+      if (disable) {
+        disabledProviders().set(providerName, disable);
+        throw err; // surface immediately — no point retrying a permanently disabled provider
+      }
+      if (!isTransient(err) || attempt === 2) throw err;
+      // 429 (rate limit) needs much longer than a 503 (model overloaded).
+      // Free Gemini Flash is 15 RPM, so 60s gets us a fresh minute.
+      const status = err.status ?? err.response?.status;
+      const delayMs = status === 429 ? 60_000 : 1500 * attempt;
+      console.warn(
+        `[llm] ${providerName} transient ${status ?? err.code}, retrying in ${delayMs}ms`
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
 }
 
 function providerChain(preferred) {
@@ -51,15 +119,20 @@ export async function chat({ messages, tools, preferProvider, model }) {
   const tried = [];
 
   for (const providerName of chain) {
-    const client = CLIENTS[providerName];
-    if (!client) {
+    if (!CLIENTS[providerName]) {
       tried.push({ provider: providerName, status: 'unknown_provider' });
+      continue;
+    }
+    if (disabledProviders().has(providerName)) {
+      const reason = disabledProviders().get(providerName);
+      console.log(`[llm] skipping ${providerName} (disabled: ${reason})`);
+      tried.push({ provider: providerName, status: `disabled:${reason}` });
       continue;
     }
 
     try {
       console.log(`[llm] trying ${providerName}`);
-      const response = await client.chat({ messages, tools, model });
+      const response = await callWithRetry(providerName, { messages, tools, model });
       tried.push({ provider: providerName, status: 'ok' });
       return { ...response, triedProviders: tried };
     } catch (err) {

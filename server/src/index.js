@@ -10,6 +10,7 @@ import passport from 'passport';
 import { configurePassport } from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
 import reposRoutes from './routes/repos.routes.js';
+import reviewsRoutes from './routes/reviews.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 // --- Required env guards ---
@@ -72,6 +73,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/api/repos', reposRoutes);
+app.use('/api/reviews', reviewsRoutes);
 
 // --- Error handler (must be last) ---
 app.use(errorHandler);
