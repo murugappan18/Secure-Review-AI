@@ -1,74 +1,37 @@
-// Phase 5 verification — one tool, one round trip, end-to-end.
+// Phase 5 + 6 verification — one round trip, end-to-end, with the tools
+// flowing through the MCP registry instead of inline definitions.
 //
 // Usage:
 //   node --use-system-ca scripts/testToolUse.js                # uses PRIMARY_LLM
 //   PRIMARY_LLM=claude node --use-system-ca scripts/testToolUse.js
 //   node --use-system-ca scripts/testToolUse.js <repoId>       # specific repo
 //
-// What it proves:
-//   - The LLM client receives a tool definition.
-//   - The model autonomously decides to call it with sensible arguments.
-//   - We execute the tool and feed the result back.
-//   - The model produces a final summary citing the retrieved code.
+// What it proves (in addition to Phase 5):
+//   - The MCP registry assembles tools from codebase + security MCP servers.
+//   - The adapter converts them into a shape our LLM clients consume.
+//   - The agent autonomously picks the right tool from a 12-tool palette.
+//   - executeToolCall validates args + routes to the right handler.
 
 import { loadDotenv } from '../src/utils/env.js';
 loadDotenv();
 
 import mongoose from 'mongoose';
 import { chat } from '../src/services/llm/llmRouter.js';
-import { searchCode } from '../src/services/vectorSearch.service.js';
+import {
+  getGenericTools,
+  executeToolCall,
+  describeRegistry,
+} from '../src/mcp/registry.js';
 import Repo from '../src/models/Repo.js';
 
 const SYSTEM_PROMPT = `You are a code analyst exploring an unfamiliar repository.
-Use the search_code tool to find relevant code chunks. When you respond, cite
-each finding with filepath:startLine-endLine. Keep the final answer under
-6 short bullet points.`;
+Use the available tools to find relevant code. When you respond, cite each
+finding with filepath:startLine-endLine. Keep the final answer concise —
+no more than 6 short bullet points.`;
 
 const USER_PROMPT =
   'Find any React components in this repo that manage state with hooks. ' +
-  'Use search_code to look for them, then list what you found.';
-
-const TOOLS = [
-  {
-    name: 'search_code',
-    description:
-      'Semantic + text search over the indexed code chunks of this repository. ' +
-      'Returns the most relevant function/class chunks for a natural-language query.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description:
-            'Natural-language query, e.g. "authentication middleware" or "input validation".',
-        },
-        limit: {
-          type: 'number',
-          description: 'Max number of chunks to return. Default 6.',
-        },
-      },
-      required: ['query'],
-    },
-  },
-];
-
-async function executeTool(name, args, repoId) {
-  if (name === 'search_code') {
-    const results = await searchCode(args.query, {
-      repoId,
-      limit: args.limit ?? 6,
-    });
-    // Compact projection — full content blows tool result size up.
-    return results.map((r) => ({
-      filepath: r.filepath,
-      name: r.name,
-      type: r.type,
-      lines: `${r.startLine}-${r.endLine}`,
-      snippet: r.content?.slice(0, 400),
-    }));
-  }
-  throw new Error(`unknown tool: ${name}`);
-}
+  'Use the available tools to look for them, then list what you found.';
 
 async function main() {
   await mongoose.connect(process.env.MONGO_URI);
@@ -83,16 +46,34 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`=== Using repo: ${repo.fullName} (${repo._id}) — ${repo.chunkCount} chunks ===\n`);
+  // --- Show what the registry knows about ---
+  console.log('=== MCP registry contents ===');
+  const desc = describeRegistry();
+  for (const [serverName, tools] of Object.entries(desc)) {
+    console.log(`\n[${serverName}]  ${tools.length} tools`);
+    for (const t of tools) {
+      console.log(`  - ${t.name}`);
+    }
+  }
+
+  console.log(`\n=== Using repo: ${repo.fullName} (${repo._id}) — ${repo.chunkCount} chunks ===\n`);
+
+  // Pull tools from codebase + security servers only. GitHub tools require
+  // an access token in ctx; this dev script doesn't run as a user, so we skip
+  // them. Phase 7's agent loop will pass the real token through.
+  const tools = getGenericTools({ servers: ['codebase', 'security'] });
+  console.log(`Offering ${tools.length} tools to the LLM\n`);
+
+  const ctx = { repoId: repo._id };
 
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: USER_PROMPT },
   ];
 
-  // --- Round 1: model decides whether to call a tool ---
+  // --- Round 1: model picks a tool ---
   console.log('--- Round 1: initial LLM call ---');
-  const r1 = await chat({ messages, tools: TOOLS });
+  const r1 = await chat({ messages, tools });
   console.log(`Answered by   : ${r1.provider} (${r1.model})`);
   console.log(`Finish reason : ${r1.finishReason}`);
   console.log(`Tokens        : ${r1.usage.inputTokens} in, ${r1.usage.outputTokens} out`);
@@ -103,20 +84,22 @@ async function main() {
   }
 
   if (r1.toolCalls.length === 0) {
-    console.log('\nModel chose not to call any tool. Test inconclusive.');
+    console.log('\nModel chose not to call any tool. Inconclusive.');
     await mongoose.disconnect();
     process.exit(0);
   }
 
-  // --- Execute every requested tool call ---
-  console.log('\n--- Executing tool calls ---');
+  // --- Execute every tool call through the registry ---
+  console.log('\n--- Executing tool calls via registry ---');
   const toolResults = [];
   for (const tc of r1.toolCalls) {
-    const result = await executeTool(tc.name, tc.arguments, repo._id);
-    console.log(`  ${tc.name} → ${result.length} chunks`);
-    for (const r of result.slice(0, 3)) {
-      console.log(`     ${r.filepath} :: ${r.name} (${r.lines})`);
-    }
+    const result = await executeToolCall(tc.name, tc.arguments, ctx);
+    const summary = Array.isArray(result)
+      ? `${result.length} items`
+      : result?.error
+        ? `ERROR: ${result.error}`
+        : Object.keys(result ?? {}).join(', ');
+    console.log(`  ${tc.name} → ${summary}`);
     toolResults.push({
       toolCallId: tc.id,
       name: tc.name,
@@ -138,7 +121,7 @@ async function main() {
   ];
   const r2 = await chat({
     messages: messages2,
-    tools: TOOLS,
+    tools,
     preferProvider: r1.provider,
   });
   console.log(`Answered by   : ${r2.provider} (${r2.model})`);
@@ -147,9 +130,14 @@ async function main() {
   console.log(r2.text ?? '(no text)');
   console.log('---\n');
 
-  console.log(`Total tokens used in test: ${
-    r1.usage.inputTokens + r1.usage.outputTokens + r2.usage.inputTokens + r2.usage.outputTokens
-  }`);
+  console.log(
+    `Total tokens: ${
+      r1.usage.inputTokens +
+      r1.usage.outputTokens +
+      r2.usage.inputTokens +
+      r2.usage.outputTokens
+    }`
+  );
 
   await mongoose.disconnect();
 }
