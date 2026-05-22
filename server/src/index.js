@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import { loadDotenv } from './utils/env.js';
+loadDotenv();
+
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
