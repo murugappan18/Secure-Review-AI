@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import pLimit from 'p-limit';
 import { chunkFile, isSupportedFile } from '../chunker/parser.js';
+import { embedBatch } from './embedding.service.js';
 import Repo from '../models/Repo.js';
 import CodeChunk from '../models/CodeChunk.js';
 
@@ -41,8 +42,18 @@ const EXCLUDED_DIRS = new Set([
 
 // Skip absurdly large files — they're usually generated or minified.
 const MAX_FILE_BYTES = 500_000;
-// Concurrency for file parsing — modest, doc-recommended (§3.1 step 7).
+// Concurrency for file parsing + embedding. Modest so we don't hammer
+// Gemini's rate limits when indexing larger repos (doc-recommended §3.1).
 const PARSE_CONCURRENCY = 4;
+
+// Text-to-embed for a chunk. Includes name + filepath + content so that
+// natural-language queries (e.g., "auth middleware") line up well against
+// chunks whose identifiers/paths suggest the same concept, not just whose
+// raw code happens to contain matching words.
+function embedTextForChunk(chunk, filepath) {
+  const label = `${chunk.type} ${chunk.name ?? 'anonymous'} in ${filepath}`;
+  return `${label}\n${chunk.content}`;
+}
 
 // -----------------------------------------------------------------------
 // Clone
@@ -173,10 +184,17 @@ export async function indexRepo({ repoId, fullName, accessToken }) {
             const chunks = chunkFile(source, filepath);
 
             if (chunks.length > 0) {
-              const docs = chunks.map((c) => ({
+              // One batch embed call per file. Per-file batches are small
+              // (1-10 chunks usually) but Gemini's batch API handles up to
+              // 100 in a single request, so this is well within limits.
+              const embedTexts = chunks.map((c) => embedTextForChunk(c, filepath));
+              const embeddings = await embedBatch(embedTexts);
+
+              const docs = chunks.map((c, i) => ({
                 ...c,
                 repoId,
                 filepath,
+                embedding: embeddings[i],
                 indexedAt: new Date(),
               }));
               await CodeChunk.insertMany(docs, { ordered: false });

@@ -128,11 +128,82 @@ function determineType(node) {
   }
 }
 
+// Pre-pass over the module's top-level statements to collect every identifier
+// that's exported via a "decoupled" pattern — declared in one statement and
+// exported later. Complements the inline `export function foo() {}` form,
+// which isExported() already handles via ancestor walk.
+//
+// Covered patterns:
+//   export default Foo;
+//   export { foo, bar };
+//   export { foo as default };
+//   module.exports = Foo;
+//   module.exports.foo = ...
+//   exports.foo = ...
+function collectExportedNames(rootNode) {
+  const names = new Set();
+
+  for (let i = 0; i < rootNode.childCount; i++) {
+    const stmt = rootNode.child(i);
+
+    // --- ESM exports ---------------------------------------------------
+    if (stmt.type === 'export_statement') {
+      // `export default <expr>` — the expression sits under the 'value' field.
+      const value = stmt.childForFieldName('value');
+      if (value?.type === 'identifier') {
+        names.add(value.text);
+      }
+
+      // `export { foo, bar }` / `export { foo as default }`
+      // The clause holds export_specifier children with 'name' (local) and
+      // optionally 'alias' (the renamed export). The local name is what
+      // matches our chunk's declared identifier, which is what we want.
+      for (let j = 0; j < stmt.childCount; j++) {
+        const c = stmt.child(j);
+        if (c.type !== 'export_clause') continue;
+        for (let k = 0; k < c.childCount; k++) {
+          const spec = c.child(k);
+          if (spec.type !== 'export_specifier') continue;
+          const localName = spec.childForFieldName('name');
+          if (localName) names.add(localName.text);
+        }
+      }
+      continue;
+    }
+
+    // --- CommonJS exports ---------------------------------------------
+    // module.exports = Foo;        / module.exports.foo = ... ; / exports.foo = ...
+    // All appear as expression_statement → assignment_expression.
+    if (stmt.type !== 'expression_statement') continue;
+    const expr = stmt.firstChild;
+    if (expr?.type !== 'assignment_expression') continue;
+    const left = expr.childForFieldName('left');
+    const right = expr.childForFieldName('right');
+    if (left?.type !== 'member_expression') continue;
+
+    const leftText = left.text;
+    if (leftText === 'module.exports') {
+      // module.exports = Foo  → captures "Foo"
+      if (right?.type === 'identifier') names.add(right.text);
+    } else if (
+      leftText.startsWith('module.exports.') ||
+      leftText.startsWith('exports.')
+    ) {
+      // module.exports.foo / exports.foo  → captures "foo"
+      const property = left.childForFieldName('property');
+      if (property) names.add(property.text);
+    }
+  }
+
+  return names;
+}
+
 // --- main entry ---------------------------------------------------------
 
 export function chunkJsLike(source, tree) {
   const root = tree.rootNode;
   const fileImports = extractTopLevelImports(root);
+  const decoupledExports = collectExportedNames(root);
   const chunks = [];
 
   function visit(node) {
@@ -140,14 +211,17 @@ export function chunkJsLike(source, tree) {
       const startLine = node.startPosition.row + 1; // 1-indexed for humans
       const endLine = node.endPosition.row + 1;
       const lineCount = endLine - startLine + 1;
-      const exported = isExported(node);
+      const name = chunkName(node);
+      // Inline `export function foo() {}` is caught by ancestor walk;
+      // the pre-pass catches the decoupled patterns (export default Foo;
+      // module.exports = Foo; etc.) — OR them together.
+      const exported = isExported(node) || (!!name && decoupledExports.has(name));
 
       // Skip tiny non-exported callbacks — they pollute the index.
       const tooSmall = lineCount < MIN_CHUNK_LINES && !exported;
 
       if (!tooSmall) {
         const content = source.slice(node.startIndex, node.endIndex);
-        const name = chunkName(node);
 
         chunks.push({
           type: determineType(node),

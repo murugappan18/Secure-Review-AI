@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { listUserRepos, getRepoMetadata } from '../services/github.service.js';
 import { indexRepo } from '../services/indexer.service.js';
+import { searchCode } from '../services/vectorSearch.service.js';
 import Repo from '../models/Repo.js';
 import CodeChunk from '../models/CodeChunk.js';
 
@@ -91,6 +92,61 @@ router.get('/:id', requireAuth, async (req, res, next) => {
     const repo = await Repo.findOne({ _id: req.params.id, userId: req.userId });
     if (!repo) return res.status(404).json({ error: 'repo_not_found' });
     res.json({ repo });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
+// GET /api/repos/:id/search?q=<query>&limit=<n>&lang=<l>&type=<t>
+// Debug hybrid search endpoint. Used to verify Phase 4 retrieval quality
+// and during agent development in later phases.
+// -----------------------------------------------------------------------
+router.get('/:id/search', requireAuth, async (req, res, next) => {
+  try {
+    const repo = await Repo.findOne({ _id: req.params.id, userId: req.userId });
+    if (!repo) return res.status(404).json({ error: 'repo_not_found' });
+
+    const q = String(req.query.q ?? '').trim();
+    if (!q) return res.status(400).json({ error: 'missing_query_param_q' });
+
+    const limit = Math.min(Number(req.query.limit) || 6, 25);
+    const languages = req.query.lang
+      ? String(req.query.lang).split(',').filter(Boolean)
+      : undefined;
+    const types = req.query.type
+      ? String(req.query.type).split(',').filter(Boolean)
+      : undefined;
+
+    const t0 = Date.now();
+    const results = await searchCode(q, {
+      repoId: repo._id,
+      limit,
+      languages,
+      types,
+    });
+
+    res.json({
+      query: q,
+      count: results.length,
+      tookMs: Date.now() - t0,
+      results: results.map((r) => ({
+        _id: r._id,
+        filepath: r.filepath,
+        name: r.name,
+        type: r.type,
+        language: r.language,
+        startLine: r.startLine,
+        endLine: r.endLine,
+        // Snippet only — full content available via /chunks/:id later if needed.
+        snippet: r.content?.slice(0, 280),
+        scores: {
+          vector: r.vectorScore?.toFixed(3),
+          text: r.textScore?.toFixed(3),
+          hybrid: r.hybridScore?.toFixed(3),
+        },
+      })),
+    });
   } catch (err) {
     next(err);
   }
