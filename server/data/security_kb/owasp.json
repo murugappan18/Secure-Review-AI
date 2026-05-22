@@ -1,0 +1,132 @@
+[
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A01",
+    "title": "Broken Access Control",
+    "description": "Access control enforces policy such that users cannot act outside of their intended permissions. Failures typically lead to unauthorized information disclosure, modification, or destruction of all data, or performing a business function outside the user's limits. Common patterns include violation of least privilege, bypassing access control checks by modifying the URL/parameters, JWT tampering, CORS misconfiguration, and force browsing to authenticated pages as an unauthenticated user.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Endpoint returns any user's data based on the id in URL — no ownership check\napp.get('/api/users/:id', requireAuth, async (req, res) => {\n  const user = await User.findById(req.params.id);\n  res.json(user);\n});",
+      "safe": "// Verify the authenticated user owns the resource\napp.get('/api/users/:id', requireAuth, async (req, res) => {\n  if (req.userId.toString() !== req.params.id) {\n    return res.status(403).json({ error: 'forbidden' });\n  }\n  const user = await User.findById(req.params.id);\n  res.json(user);\n});"
+    },
+    "references": ["https://owasp.org/Top10/A01_2021-Broken_Access_Control/"],
+    "severity": "high"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A02",
+    "title": "Cryptographic Failures",
+    "description": "Failures related to cryptography (or lack thereof) which often lead to exposure of sensitive data. Common issues: transmitting data in cleartext, use of old or weak cryptographic algorithms, default crypto keys, weak random number generation, missing encryption at rest, improper certificate validation. Includes storing passwords with fast hashes (MD5, SHA1) instead of password-specific KDFs.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// MD5 is fast and broken — attackers can brute-force easily\nconst hash = crypto.createHash('md5').update(password).digest('hex');",
+      "safe": "// Use argon2 or bcrypt — slow by design\nimport argon2 from 'argon2';\nconst hash = await argon2.hash(password, { type: argon2.argon2id });"
+    },
+    "references": ["https://owasp.org/Top10/A02_2021-Cryptographic_Failures/"],
+    "severity": "high"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A03",
+    "title": "Injection",
+    "description": "An application is vulnerable when user-supplied data is not validated, filtered, or sanitized AND interpreted/executed by an interpreter. Includes SQL injection, NoSQL injection, OS command injection, LDAP injection, ORM injection, eval-style code injection, and HTML/JavaScript injection (XSS). The defense is consistent parameterization or context-aware encoding — never string concatenation of user input into queries or scripts.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// SQL injection via string concatenation\nconst q = `SELECT * FROM users WHERE email = '${email}'`;\nconst rows = await db.query(q);\n\n// Code injection via eval\nconst result = eval(userFormula);",
+      "safe": "// Parameterized query\nconst rows = await db.query('SELECT * FROM users WHERE email = $1', [email]);\n\n// Parse a small allowed grammar instead of eval\nconst result = safeMathEval(userFormula); // your own validator"
+    },
+    "references": ["https://owasp.org/Top10/A03_2021-Injection/", "https://cwe.mitre.org/data/definitions/89.html", "https://cwe.mitre.org/data/definitions/79.html", "https://cwe.mitre.org/data/definitions/94.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A04",
+    "title": "Insecure Design",
+    "description": "Risks rooted in missing or ineffective control design. Distinct from implementation flaws — a secure design can still fail in implementation, but an insecure design cannot be fixed by perfect implementation. Examples: lack of rate limiting on credential stuffing surfaces, security questions as the primary recovery factor, business logic that trusts client-side validation alone, or trusting third-party iframes with sensitive postMessage payloads without origin checks.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Trusting any postMessage sender\nwindow.addEventListener('message', (e) => {\n  if (e.data.type === 'auth') {\n    setUser(e.data.user); // attacker page sends this from a popup\n  }\n});",
+      "safe": "window.addEventListener('message', (e) => {\n  if (e.origin !== 'https://trusted.example.com') return;\n  if (e.data.type === 'auth') setUser(e.data.user);\n});"
+    },
+    "references": ["https://owasp.org/Top10/A04_2021-Insecure_Design/"],
+    "severity": "high"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A05",
+    "title": "Security Misconfiguration",
+    "description": "Common misconfigurations include leaving default accounts enabled, unnecessary features enabled, missing security headers (CSP, HSTS, X-Frame-Options), verbose error messages revealing stack traces, outdated software, and improper CORS configuration. Frequently the result of insecure defaults or accumulated drift from a hardened baseline.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Permissive CORS reflecting any origin with credentials\napp.use(cors({ origin: true, credentials: true }));",
+      "safe": "const ALLOWED = new Set(['https://app.example.com']);\napp.use(cors({\n  origin: (origin, cb) => cb(null, ALLOWED.has(origin)),\n  credentials: true,\n}));"
+    },
+    "references": ["https://owasp.org/Top10/A05_2021-Security_Misconfiguration/"],
+    "severity": "medium"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A06",
+    "title": "Vulnerable and Outdated Components",
+    "description": "Using components (libraries, frameworks, modules) with known vulnerabilities. Includes unpatched OS / runtime / package versions, dependencies of dependencies (transitive), and abandoned components. The risk depends on whether the vulnerable code path is reachable from the application's attack surface.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// package.json pinning an old lodash with prototype pollution CVE\n\"lodash\": \"4.17.10\"",
+      "safe": "// Upgraded; check OSV.dev or `npm audit` regularly\n\"lodash\": \"^4.17.21\""
+    },
+    "references": ["https://owasp.org/Top10/A06_2021-Vulnerable_and_Outdated_Components/"],
+    "severity": "high"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A07",
+    "title": "Identification and Authentication Failures",
+    "description": "Failures in authenticating a user's identity. Examples: permitting brute force or credential stuffing, weak password policies, ineffective MFA, password recovery via knowledge-based answers, exposing session identifiers in URLs, missing session expiration, lacking session invalidation on logout, JWTs signed with HS256 and a weak/shared secret.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Accepts JWT regardless of algorithm — `alg: none` attack\nconst payload = jwt.decode(token); // not verify!",
+      "safe": "const payload = jwt.verify(token, SECRET, { algorithms: ['HS256'] });"
+    },
+    "references": ["https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/"],
+    "severity": "high"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A08",
+    "title": "Software and Data Integrity Failures",
+    "description": "Software updates, critical data, or CI/CD pipelines that don't verify integrity. Examples: deserializing untrusted data, accepting unsigned auto-updates, build pipelines pulling from unpinned registries, plugins from untrusted sources. Includes prototype pollution where deserialized data corrupts shared state.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "// Object.assign without a safe target — attacker controls JSON\nObject.assign(defaults, JSON.parse(localStorage.getItem('settings')));",
+      "safe": "const incoming = JSON.parse(localStorage.getItem('settings') ?? '{}');\nfor (const k of ALLOWED_KEYS) {\n  if (k in incoming) defaults[k] = incoming[k];\n}"
+    },
+    "references": ["https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures/", "https://cwe.mitre.org/data/definitions/502.html", "https://cwe.mitre.org/data/definitions/1321.html"],
+    "severity": "high"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A09",
+    "title": "Security Logging and Monitoring Failures",
+    "description": "Without logging and monitoring, breaches go undetected. Includes failing to log security-relevant events (logins, access control failures), inadequate alerts, logs stored only locally and easily wiped, and lack of incident response playbooks. The goal is detection, response, and forensic recovery.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Silently swallows the auth failure — no audit trail\nif (!(await verifyPassword(input, user.hash))) {\n  return res.status(401).json({ error: 'bad creds' });\n}",
+      "safe": "if (!(await verifyPassword(input, user.hash))) {\n  logger.warn({ userId: user.id, ip: req.ip, ua: req.headers['user-agent'] }, 'auth_failure');\n  return res.status(401).json({ error: 'bad creds' });\n}"
+    },
+    "references": ["https://owasp.org/Top10/A09_2021-Security_Logging_and_Monitoring_Failures/"],
+    "severity": "medium"
+  },
+  {
+    "source": "owasp",
+    "identifier": "OWASP-A10",
+    "title": "Server-Side Request Forgery (SSRF)",
+    "description": "The web application fetches a remote resource without validating the user-supplied URL. Allows an attacker to coerce the application into sending crafted requests to unintended destinations — often internal services, cloud metadata endpoints (169.254.169.254), or to bypass network ACLs. Defense: validate the host against an allowlist, never against a denylist of IPs.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.get('/proxy', async (req, res) => {\n  const r = await fetch(req.query.url);\n  r.body.pipe(res);\n});",
+      "safe": "const ALLOWED_HOSTS = new Set(['images.example.com', 'cdn.example.com']);\napp.get('/proxy', async (req, res) => {\n  const u = new URL(req.query.url);\n  if (!ALLOWED_HOSTS.has(u.hostname)) return res.status(400).end();\n  const r = await fetch(u.toString());\n  r.body.pipe(res);\n});"
+    },
+    "references": ["https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/", "https://cwe.mitre.org/data/definitions/918.html"],
+    "severity": "high"
+  }
+]

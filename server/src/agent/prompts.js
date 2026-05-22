@@ -42,6 +42,13 @@ prose, NO markdown code fences, NO commentary. Just the JSON object.
   unauthenticated remote attacker with high impact (RCE, full DB takeover).
 - Do NOT report the same vulnerability twice in different categories.
 
+# Grounding requirement (positive directive)
+For every potential vulnerability you identify, ALWAYS call lookup_cwe with a
+specific CWE ID OR search_owasp with a relevant query. The returned entry must
+match what you observed in the code; if no entry matches, your finding probably
+doesn't belong in the report. Include the references[] URLs from the lookups in
+your final findings.
+
 # Confidence calibration
 - 0.9-1.0: direct evidence (e.g. you can quote the literal eval() call on user input).
 - 0.7-0.8: strong inference (e.g. function pattern matches a known CWE template).

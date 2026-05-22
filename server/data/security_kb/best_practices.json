@@ -1,0 +1,262 @@
+[
+  {
+    "source": "best_practice",
+    "identifier": "BP-001",
+    "title": "Use parameterized queries everywhere",
+    "description": "Build every database query by passing user input as a separate parameter, never by string concatenation or template-string interpolation. This works for SQL (pg, mysql2), MongoDB (operator filters), and document DBs. Even ORM helpers can leak via raw query escape hatches — audit those.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "db.query(`SELECT * FROM users WHERE email = '${email}'`);",
+      "safe": "db.query('SELECT * FROM users WHERE email = $1', [email]);"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/89.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-002",
+    "title": "Hash passwords with argon2id or bcrypt — never raw SHA/MD5",
+    "description": "Password hashes must be slow, salted, and memory-hard to resist offline brute-force. Use argon2id (preferred) or bcrypt with a work factor of 12+. Verify with constant-time compare functions provided by the library.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "const hash = crypto.createHash('sha256').update(pw).digest('hex');",
+      "safe": "import argon2 from 'argon2';\nconst hash = await argon2.hash(pw, { type: argon2.argon2id });\nconst ok = await argon2.verify(hash, pw);"
+    },
+    "references": ["https://owasp.org/www-project-cheat-sheets/cheatsheets/Password_Storage_Cheat_Sheet.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-003",
+    "title": "Verify JWTs — algorithm AND signature",
+    "description": "Always call jwt.verify (not jwt.decode), pin the allowed algorithms list, and reject tokens with `alg: none`. Use HS256 with a 256-bit-plus secret stored in env, or RS256/ES256 with proper key management.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "const payload = jwt.decode(token);",
+      "safe": "const payload = jwt.verify(token, SECRET, { algorithms: ['HS256'], maxAge: '7d' });"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/287.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-004",
+    "title": "Set SameSite=Lax + Secure on all auth cookies",
+    "description": "Cross-site requests should not carry session cookies for most apps. SameSite=Lax is the right default; Strict is even tighter but breaks some legitimate cross-site links. Always pair with Secure (HTTPS only) and HttpOnly (no JS access).",
+    "language": "all",
+    "examples": {
+      "vulnerable": "res.cookie('session', token);",
+      "safe": "res.cookie('session', token, {\n  httpOnly: true,\n  secure: true,\n  sameSite: 'lax',\n  maxAge: 7 * 24 * 3600 * 1000,\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/352.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-005",
+    "title": "Use helmet to set baseline security headers",
+    "description": "Standard headers — Content-Security-Policy, X-Frame-Options, Strict-Transport-Security, Referrer-Policy, X-Content-Type-Options — add layered defense against XSS, clickjacking, MIME sniffing, and information leaks. Helmet ships a sensible baseline for Express.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "// no security headers",
+      "safe": "import helmet from 'helmet';\napp.use(helmet({ contentSecurityPolicy: { directives: { ... } } }));"
+    },
+    "references": ["https://owasp.org/www-project-secure-headers/"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-006",
+    "title": "Never call eval / new Function / setTimeout(string) on user input",
+    "description": "These all parse arbitrary code at runtime. There is no safe way to use them with attacker-influenced strings. For configurable expressions, write a small parser or use a library with an explicit scope (mathjs, expr-eval).",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "const r = eval(userFormula);\nconst f = new Function('x', userBody);\nsetTimeout(userCode, 0);",
+      "safe": "import { evaluate } from 'mathjs';\nconst r = evaluate(userFormula, { /* scope */ });"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/95.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-007",
+    "title": "Sanitize HTML before dangerouslySetInnerHTML",
+    "description": "If you must render user-supplied HTML (markdown output, comments), pipe it through DOMPurify with a strict allowlist of tags and attributes. Better: render as text via JSX expressions ({content}). React's automatic escaping handles the common case.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "<div dangerouslySetInnerHTML={{ __html: comment }} />",
+      "safe": "import DOMPurify from 'dompurify';\nconst clean = DOMPurify.sanitize(comment, { ALLOWED_TAGS: ['b','i','a','p','strong','em'] });\nreturn <div dangerouslySetInnerHTML={{ __html: clean }} />;"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/79.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-008",
+    "title": "Load secrets from environment, never source",
+    "description": "Hardcoded keys, tokens, and passwords leak the moment the repo is cloned, archived, or breached. Use process.env for runtime configuration; commit only .env.example with placeholder values. Use a secret manager (AWS Secrets Manager, Vault) for production.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "const STRIPE = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc';",
+      "safe": "const STRIPE = process.env.STRIPE_SECRET_KEY;\nif (!STRIPE) throw new Error('STRIPE_SECRET_KEY missing');"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/798.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-009",
+    "title": "Validate redirect targets against an allowlist",
+    "description": "Open redirects power phishing. Allow only relative paths on your own domain, or absolute URLs whose host is in a small allowlist. Never reflect req.query.url directly into res.redirect.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "res.redirect(req.query.next);",
+      "safe": "const next = String(req.query.next ?? '/');\nres.redirect(/^\\/[^/]/.test(next) ? next : '/');"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/601.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-010",
+    "title": "Rate-limit auth endpoints",
+    "description": "Login, password-reset, OTP, and signup flows are the primary brute-force targets. Use express-rate-limit (or your gateway's equivalent) keyed by IP + username. Don't rate-limit by IP alone — credential-stuffing attacks rotate IPs cheaply.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "app.post('/login', loginHandler);",
+      "safe": "import rateLimit from 'express-rate-limit';\nconst limiter = rateLimit({\n  windowMs: 15 * 60 * 1000, max: 10,\n  keyGenerator: (req) => `${req.ip}:${req.body.email}`,\n});\napp.post('/login', limiter, loginHandler);"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/307.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-011",
+    "title": "CORS allowlist — never reflect arbitrary origins with credentials",
+    "description": "Setting Access-Control-Allow-Origin: req.headers.origin with Access-Control-Allow-Credentials: true is equivalent to having no CORS at all. Maintain an explicit allowlist of origins; use a function to validate.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "app.use(cors({ origin: true, credentials: true }));",
+      "safe": "const ALLOWED = new Set(['https://app.example.com']);\napp.use(cors({\n  origin: (origin, cb) => cb(null, !origin || ALLOWED.has(origin)),\n  credentials: true,\n}));"
+    },
+    "references": ["https://owasp.org/Top10/A05_2021-Security_Misconfiguration/"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-012",
+    "title": "Defend against prototype pollution when merging objects",
+    "description": "Object.assign, lodash.merge, and similar APIs can introduce __proto__ writes when the source is attacker-controlled. Use Object.create(null) as the target, or explicitly copy only known keys. Recent lodash versions guard against this — older ones do not.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "Object.assign(defaults, JSON.parse(req.body.options));",
+      "safe": "const target = Object.create(null);\nObject.assign(target, defaults);\nfor (const k of ALLOWED_KEYS) {\n  if (Object.hasOwn(incoming, k)) target[k] = incoming[k];\n}"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/1321.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-013",
+    "title": "Avoid NoSQL operator injection",
+    "description": "Mongoose / MongoDB queries built from req.body are vulnerable if the request contains MongoDB operators ({$ne: null}, {$gt: ''}). Cast inputs to expected primitive types before using them in filters, or use a schema validator that rejects nested objects.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "// req.body.email = { $ne: null } → matches every user\nUser.findOne({ email: req.body.email });",
+      "safe": "const email = String(req.body.email);\nUser.findOne({ email });"
+    },
+    "references": ["https://owasp.org/www-community/Injection_Flaws"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-014",
+    "title": "Verify ownership of every resource — not just authentication",
+    "description": "requireAuth tells you WHO is calling. It does NOT tell you whether THIS user is allowed to access THIS resource. Every resource handler must check that the resource belongs to req.user (or that the user has the required role).",
+    "language": "all",
+    "examples": {
+      "vulnerable": "router.get('/posts/:id', requireAuth, async (req, res) => {\n  res.json(await Post.findById(req.params.id));\n});",
+      "safe": "router.get('/posts/:id', requireAuth, async (req, res) => {\n  const post = await Post.findById(req.params.id);\n  if (!post || !post.authorId.equals(req.userId)) return res.status(404).end();\n  res.json(post);\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/862.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-015",
+    "title": "Validate file uploads — MIME, size, AND magic bytes",
+    "description": "Trusting the client-supplied Content-Type or extension is naive. Use a library that sniffs the actual file header (file-type), enforce size limits at multer/busboy level, and serve uploads from an isolated origin or via signed URLs so they can't access your site's cookies.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "app.post('/upload', upload.single('f'), (req, res) => {\n  // file lands directly under /uploads served by your app\n});",
+      "safe": "import { fileTypeFromBuffer } from 'file-type';\napp.post('/upload', upload.single('f', { limits: { fileSize: 5 * 1024 * 1024 } }), async (req, res) => {\n  const sniffed = await fileTypeFromBuffer(req.file.buffer);\n  if (!sniffed || !ALLOWED_TYPES.has(sniffed.mime)) return res.status(400).end();\n  // Upload to S3 / R2 / object storage with random name. Serve via signed URLs.\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/434.html"],
+    "severity": "high"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-016",
+    "title": "Constant-time compare for tokens & HMACs",
+    "description": "String equality (===) and Buffer.compare leak length and early-mismatch timing, which can be measured remotely to recover secrets byte by byte. Use crypto.timingSafeEqual for any sensitive comparison.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "if (suppliedToken === expectedToken) { ... }",
+      "safe": "import { timingSafeEqual } from 'node:crypto';\nconst a = Buffer.from(supplied, 'hex');\nconst b = Buffer.from(expected, 'hex');\nif (a.length === b.length && timingSafeEqual(a, b)) { ... }"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/208.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-017",
+    "title": "Don't leak stack traces or internal error messages in prod",
+    "description": "Detailed errors are gold for attackers — they reveal stack frames, DB types, file paths, library versions. Set an error handler that returns a generic message in production while still logging the full stack server-side.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.use((err, req, res, next) => {\n  res.status(500).json({ error: err.message, stack: err.stack });\n});",
+      "safe": "app.use((err, req, res, _next) => {\n  logger.error(err);\n  const status = err.status ?? 500;\n  res.status(status).json({\n    error: status >= 500 ? 'internal_error' : err.message,\n  });\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/209.html"],
+    "severity": "low"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-018",
+    "title": "Enforce input length and shape limits",
+    "description": "Reject oversized bodies and pathologically nested JSON before they reach business logic. Use express.json({ limit: '1mb' }) (or smaller for most routes), Zod / Joi schemas for body validation, and a global timeout for slow clients.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "app.use(express.json());\napp.post('/post', (req, res) => save(req.body));",
+      "safe": "import { z } from 'zod';\nconst PostSchema = z.object({ title: z.string().max(200), body: z.string().max(50_000) });\napp.use(express.json({ limit: '256kb' }));\napp.post('/post', (req, res) => {\n  const v = PostSchema.safeParse(req.body);\n  if (!v.success) return res.status(400).json(v.error.format());\n  save(v.data);\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/20.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-019",
+    "title": "Don't store sensitive data in localStorage",
+    "description": "localStorage is readable by any JavaScript running on the page — including injected XSS payloads, malicious dependencies, browser extensions. For session credentials prefer httpOnly cookies. If you must use localStorage (e.g. portfolio app convenience), ensure aggressive CSP and accept the XSS-equivalent compromise.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "localStorage.setItem('jwt', longLivedToken);",
+      "safe": "// Backend sets the cookie:\nres.cookie('session', token, { httpOnly: true, secure: true, sameSite: 'lax' });"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/312.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "best_practice",
+    "identifier": "BP-020",
+    "title": "Pin and audit dependencies; act on `npm audit` / OSV.dev findings",
+    "description": "Use exact versions or tight semver in package.json. Run `npm audit` (or Snyk / GitHub Dependabot) in CI and fail builds on high/critical findings. For transitive vulnerabilities you can't upgrade, use `overrides` in package.json to force a patched version.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// package.json with floating major and no audit gate",
+      "safe": "// .github/workflows/ci.yml step\n- run: npm audit --audit-level=high\n// package.json\n\"overrides\": { \"some-vuln-transitive\": \"^2.4.5\" }"
+    },
+    "references": ["https://owasp.org/Top10/A06_2021-Vulnerable_and_Outdated_Components/"],
+    "severity": "high"
+  }
+]

@@ -1,0 +1,249 @@
+[
+  {
+    "source": "cwe",
+    "identifier": "CWE-20",
+    "title": "Improper Input Validation",
+    "description": "The product receives input or data, but it does not validate or incorrectly validates that the input has the properties required to process the data safely and correctly. This is the root cause of many injection and logic vulnerabilities. Always validate type, length, range, format, and allowed values at trust boundaries.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Trusts that req.body.age is a number\nuser.age = req.body.age;",
+      "safe": "const age = Number(req.body.age);\nif (!Number.isInteger(age) || age < 0 || age > 130) {\n  return res.status(400).json({ error: 'invalid_age' });\n}\nuser.age = age;"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/20.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-22",
+    "title": "Path Traversal",
+    "description": "The product uses external input to construct a pathname intended to identify a file or directory beneath a restricted parent directory, but does not properly neutralize sequences like '../' that resolve outside that directory. Allows attackers to read or write files outside the intended scope.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.get('/files/:name', (req, res) => {\n  res.sendFile(path.join('./uploads', req.params.name));\n});\n// GET /files/..%2F..%2Fetc%2Fpasswd",
+      "safe": "import path from 'node:path';\nconst BASE = path.resolve('./uploads');\napp.get('/files/:name', (req, res) => {\n  const target = path.resolve(BASE, req.params.name);\n  if (!target.startsWith(BASE + path.sep)) return res.status(400).end();\n  res.sendFile(target);\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/22.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-78",
+    "title": "OS Command Injection",
+    "description": "The product constructs all or part of an OS command using externally-influenced input, but does not neutralize special elements that could modify the intended command. Attackers gain code execution at the OS level, often as the application user. Prefer APIs that take arguments as arrays over those that spawn a shell.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "const { exec } = require('node:child_process');\nexec(`convert ${userFilename} thumb.png`, ...);",
+      "safe": "const { execFile } = require('node:child_process');\nexecFile('convert', [userFilename, 'thumb.png'], { shell: false }, ...);"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/78.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-79",
+    "title": "Cross-site Scripting (XSS)",
+    "description": "The product does not neutralize or incorrectly neutralizes user-controllable input before it is placed in output that is used as a web page served to other users. Three flavors: reflected (URL → script), stored (DB → script), DOM-based (client-side). In React, the canonical foot-gun is dangerouslySetInnerHTML with non-sanitized input.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "function CommentBox({ comment }) {\n  return <div dangerouslySetInnerHTML={{ __html: comment }} />;\n}",
+      "safe": "import DOMPurify from 'dompurify';\nfunction CommentBox({ comment }) {\n  const clean = DOMPurify.sanitize(comment, { ALLOWED_TAGS: ['b','i','a','p'] });\n  return <div dangerouslySetInnerHTML={{ __html: clean }} />;\n}\n// Better still: render as text\n// return <div>{comment}</div>;"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/79.html", "https://owasp.org/Top10/A03_2021-Injection/"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-89",
+    "title": "SQL Injection",
+    "description": "The product constructs all or part of a SQL command using externally-influenced input, but does not neutralize special elements that could modify the SQL command. Effectively gives the attacker the privileges of the application's DB user — often everything. Defense is parameterized queries; ORM helpers don't always protect (e.g. raw query escape hatches).",
+    "language": "all",
+    "examples": {
+      "vulnerable": "const sql = `SELECT * FROM users WHERE email = '${req.body.email}'`;\nconst rows = await db.query(sql);",
+      "safe": "const rows = await db.query('SELECT * FROM users WHERE email = $1', [req.body.email]);"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/89.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-94",
+    "title": "Code Injection",
+    "description": "The product constructs all or part of a code segment using externally-influenced input, but does not neutralize special elements that could modify the syntax or behavior of the intended code segment. Includes eval, Function constructor, vm module with user input, template engines used as code interpreters, and dynamic require/import paths.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "const result = eval(userExpression);\nconst fn = new Function(userBody);",
+      "safe": "// Parse a small DSL with a real parser or library\nimport { evaluate } from 'mathjs';\nconst result = evaluate(userExpression, { /* limited scope */ });"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/94.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-95",
+    "title": "Eval Injection",
+    "description": "The product receives input from an upstream component, but it does not neutralize or incorrectly neutralizes code syntax before using the input in a dynamic evaluation call (e.g. eval). This is a specific form of CWE-94 focused on the eval primitive. In JavaScript, eval runs with full access to the surrounding scope — never use it on data that can be influenced by an external party.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "function evaluateColorFormula(formula, h) {\n  return eval(formula);\n}",
+      "safe": "function evaluateColorFormula(formula, h) {\n  // Allow only simple arithmetic with h\n  if (!/^[0-9+\\-*/\\s().h]+$/.test(formula)) throw new Error('invalid');\n  return Function('h', `return (${formula});`)(h); // still risky — prefer a parser\n}"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/95.html"],
+    "severity": "critical"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-200",
+    "title": "Exposure of Sensitive Information to an Unauthorized Actor",
+    "description": "The product exposes sensitive information to an actor that is not explicitly authorized to have access to that information. Common pitfalls: returning full user records (including password hashes or tokens) from API endpoints, stack traces in production responses, debug log output containing secrets, and verbose error messages.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.get('/me', requireAuth, async (req, res) => {\n  const user = await User.findById(req.userId);\n  res.json(user); // includes hashedPassword, accessToken, ...\n});",
+      "safe": "// Use a toJSON transform on the model, or project explicitly\nres.json({ id: user.id, email: user.email, name: user.name });"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/200.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-287",
+    "title": "Improper Authentication",
+    "description": "When an actor claims to have a given identity, the product does not prove or insufficiently proves the claim is correct. Includes accepting unsigned/unverified tokens, type-confused tokens (JWT alg=none), trusting client-supplied user identifiers without verification, and missing session validation.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "const payload = jwt.decode(req.headers.authorization); // not verify\nreq.userId = payload.sub;",
+      "safe": "try {\n  const payload = jwt.verify(token, SECRET, { algorithms: ['HS256'] });\n  req.userId = payload.sub;\n} catch {\n  return res.status(401).end();\n}"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/287.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-306",
+    "title": "Missing Authentication for Critical Function",
+    "description": "The product does not perform any authentication for functionality that requires a provable user identity or consumes a significant amount of resources. Common when admin endpoints are 'hidden' rather than authenticated, or internal RPCs are exposed by mistake without auth checks.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// /api/admin/delete-user/:id has no auth check\nrouter.delete('/admin/delete-user/:id', async (req, res) => { ... });",
+      "safe": "router.delete('/admin/delete-user/:id', requireAuth, requireAdmin, async (req, res) => { ... });"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/306.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-312",
+    "title": "Cleartext Storage of Sensitive Information",
+    "description": "The product stores sensitive information in cleartext within a resource that might be accessible to another control sphere. Includes storing passwords in plain DB columns, secrets/tokens in localStorage where any XSS reads them, plaintext config files committed to repos, and logs that capture full payloads including credentials.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// API key in source — anyone who clones the repo has it\nconst COLOR_API_KEY = 'sk_live_a7d2f8e4c1b3946e08f2a5b7d9c3e1f4';",
+      "safe": "// Load from process.env at runtime; never commit .env\nconst COLOR_API_KEY = process.env.COLOR_API_KEY;\nif (!COLOR_API_KEY) throw new Error('COLOR_API_KEY missing');"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/312.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-352",
+    "title": "Cross-Site Request Forgery (CSRF)",
+    "description": "The web application does not, or cannot, sufficiently verify whether a well-formed, valid, consistent request was intentionally provided by the user who submitted the request. An attacker on a different site can make the user's browser send authenticated requests to your site. Defense: SameSite cookies + double-submit CSRF tokens for state-changing operations.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// Cookie-only auth, no SameSite, no CSRF token\nres.cookie('session', token, { httpOnly: true });",
+      "safe": "res.cookie('session', token, {\n  httpOnly: true, secure: true, sameSite: 'lax',\n});\n// For state-changing requests, also verify a CSRF token in body/header."
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/352.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-434",
+    "title": "Unrestricted Upload of File with Dangerous Type",
+    "description": "The product allows the attacker to upload or transfer files of dangerous types that can be automatically processed within the product's environment. Common when servers serve user uploads from a path that allows them to be executed (e.g. /uploads/shell.php on a PHP server). Validate MIME type, extension, magic bytes, AND serve uploads from a separate domain or with strict Content-Disposition.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.post('/upload', upload.single('file'), (req, res) => {\n  res.json({ url: '/uploads/' + req.file.originalname });\n});",
+      "safe": "const ALLOWED = new Set(['image/png','image/jpeg','image/webp']);\napp.post('/upload', upload.single('file'), (req, res) => {\n  if (!ALLOWED.has(req.file.mimetype)) return res.status(400).end();\n  const safeName = randomUUID() + path.extname(req.file.originalname);\n  // store in object storage, serve via signed URLs, NOT directly from app domain\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/434.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-502",
+    "title": "Deserialization of Untrusted Data",
+    "description": "The product deserializes untrusted data without sufficient verification that the resulting data is valid. In JavaScript, the classic vector is JSON.parse-feeding-Object.assign (prototype pollution), or using unsafe deserialization libraries (node-serialize). The risk: deserialized object can attack the application by mutating shared prototypes or invoking gadget chains.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "const incoming = JSON.parse(localStorage.getItem('settings'));\nObject.assign(defaults, incoming); // attacker writes __proto__.isAdmin",
+      "safe": "const ALLOWED = ['theme', 'fontSize', 'locale'];\nconst incoming = JSON.parse(localStorage.getItem('settings') ?? '{}');\nfor (const k of ALLOWED) if (k in incoming) defaults[k] = incoming[k];"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/502.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-601",
+    "title": "URL Redirection to Untrusted Site (Open Redirect)",
+    "description": "A web application accepts a user-controlled input that specifies a link to an external site, and uses that link in a redirect. Useful for phishing — attacker sends a link to your trusted domain that redirects to their fake login page. Validate the redirect target against an allowlist of paths/hosts.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.get('/login', (req, res) => {\n  res.redirect(req.query.next ?? '/');\n});\n// /login?next=https://evil.com",
+      "safe": "app.get('/login', (req, res) => {\n  const next = String(req.query.next ?? '/');\n  // Only allow paths that start with / and aren't protocol-relative\n  res.redirect(/^\\/[^/]/.test(next) ? next : '/');\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/601.html"],
+    "severity": "medium"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-798",
+    "title": "Use of Hard-coded Credentials",
+    "description": "The product contains hard-coded credentials, such as a password or cryptographic key, which it uses for its own inbound authentication, outbound communication to external components, or encryption of internal data. Once committed to source control, the secret is effectively public and rotating it is painful. Always load from environment variables or a secret manager.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "const COLOR_API_KEY = 'sk_live_a7d2f8e4c1b3946e08f2a5b7d9c3e1f4';\nconst DB_PASSWORD = 'admin123';",
+      "safe": "const COLOR_API_KEY = process.env.COLOR_API_KEY;\nif (!COLOR_API_KEY) throw new Error('COLOR_API_KEY missing');"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/798.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-862",
+    "title": "Missing Authorization",
+    "description": "The product does not perform an authorization check when an actor attempts to access a resource or perform an action. Often seen alongside CWE-285 (Improper Authorization). The check itself is missing — distinct from being present but wrong.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "// requireAuth passes, but no ownership check\nrouter.delete('/posts/:id', requireAuth, async (req, res) => {\n  await Post.deleteOne({ _id: req.params.id });\n});",
+      "safe": "router.delete('/posts/:id', requireAuth, async (req, res) => {\n  const post = await Post.findById(req.params.id);\n  if (!post || !post.authorId.equals(req.userId)) return res.status(403).end();\n  await post.deleteOne();\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/862.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-918",
+    "title": "Server-Side Request Forgery (SSRF)",
+    "description": "The web server receives a URL or similar request from an upstream component and retrieves the contents of this URL, but it does not sufficiently ensure that the request is being sent to the expected destination. Can be used to scan internal networks, hit cloud metadata endpoints (169.254.169.254), or bypass IP-based firewalls.",
+    "language": "all",
+    "examples": {
+      "vulnerable": "app.get('/fetch', async (req, res) => {\n  const r = await fetch(req.query.url);\n  r.body.pipe(res);\n});",
+      "safe": "const ALLOWED = new Set(['images.example.com', 'cdn.example.com']);\napp.get('/fetch', async (req, res) => {\n  const u = new URL(String(req.query.url));\n  if (!['http:','https:'].includes(u.protocol)) return res.status(400).end();\n  if (!ALLOWED.has(u.hostname)) return res.status(400).end();\n  const r = await fetch(u.toString());\n  r.body.pipe(res);\n});"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/918.html"],
+    "severity": "high"
+  },
+  {
+    "source": "cwe",
+    "identifier": "CWE-1321",
+    "title": "Improperly Controlled Modification of Object Prototype Attributes (Prototype Pollution)",
+    "description": "The product receives input from an upstream component that specifies attributes that are to be initialized or updated in an object, but it does not properly control modifications of attributes of the object prototype. The classic JS recipe is Object.assign(target, JSON.parse(userInput)) — the parsed object can include __proto__ which then modifies Object.prototype for the whole runtime.",
+    "language": "javascript",
+    "examples": {
+      "vulnerable": "function loadSettings() {\n  const raw = localStorage.getItem('settings');\n  return Object.assign({ theme: 'light' }, JSON.parse(raw));\n}",
+      "safe": "function loadSettings() {\n  const incoming = JSON.parse(localStorage.getItem('settings') ?? '{}');\n  // Create a prototype-less target to nullify __proto__ writes\n  const target = Object.create(null);\n  target.theme = 'light';\n  for (const k of ['theme','fontSize','locale']) if (k in incoming) target[k] = incoming[k];\n  return target;\n}"
+    },
+    "references": ["https://cwe.mitre.org/data/definitions/1321.html"],
+    "severity": "high"
+  }
+]
