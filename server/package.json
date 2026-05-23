@@ -7,8 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node --use-system-ca src/index.js",
-    "seed": "node --use-system-ca scripts/seedSecurityKB.js"
+    "start": "node src/index.js",
+    "seed": "node scripts/seedSecurityKB.js"
   },
   "engines": {
     "node": ">=20"
