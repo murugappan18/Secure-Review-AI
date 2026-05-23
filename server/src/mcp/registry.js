@@ -14,7 +14,6 @@
 import { codebaseTools, codebaseServerInfo } from './servers/codebase/server.js';
 import { securityTools, securityServerInfo } from './servers/security/server.js';
 import { githubTools, githubServerInfo } from './servers/github/server.js';
-import { validateArgs } from './types.js';
 import { mcpToGenericTools } from './adapter.js';
 
 // name → { tool, serverName }
@@ -52,21 +51,18 @@ export function getGenericTools(opts) {
   return mcpToGenericTools(getMcpTools(opts));
 }
 
-// Execute a tool by name. Validates args against its inputSchema, then
-// calls the handler with the supplied context. Errors come back as
-// { error: string } so the agent loop can feed them to the LLM rather than
-// crashing the whole review.
+// Execute a tool by name. We DO NOT strictly validate args against the
+// inputSchema here — lite LLMs often use slightly wrong arg names (e.g. "id"
+// instead of "cweId", "q" instead of "query"). Each handler is responsible
+// for tolerating common variants. Errors come back as { error: string } so
+// the agent loop can surface them to the LLM and reprompt.
 export async function executeToolCall(name, args, ctx = {}) {
   const entry = REGISTRY.get(name);
   if (!entry) {
     return { error: `unknown tool: ${name}` };
   }
-  const issues = validateArgs(entry.tool, args);
-  if (issues.length) {
-    return { error: 'invalid_arguments', issues };
-  }
   try {
-    return await entry.tool.handler(args, ctx);
+    return await entry.tool.handler(args ?? {}, ctx);
   } catch (err) {
     console.error(`[mcp] tool ${name} threw:`, err);
     return { error: err.message?.slice(0, 300) ?? 'unknown error' };

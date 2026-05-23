@@ -10,6 +10,25 @@ import { embedQuery } from '../../../services/embedding.service.js';
 
 const KB_VECTOR_INDEX = 'security_kb_vector_index'; // created in Phase 8
 
+// Pick the first non-null value from a list of possible keys on `args`.
+// Lets handlers tolerate LLM-produced arg-name variants like id/cweId/cwe.
+function pick(args, keys) {
+  for (const k of keys) {
+    if (args[k] != null && args[k] !== '') return args[k];
+  }
+  return null;
+}
+
+function normalizeCweId(raw) {
+  const s = String(raw).trim().toUpperCase();
+  return s.startsWith('CWE-') ? s : `CWE-${s.replace(/^CWE/, '')}`;
+}
+
+function normalizeCveId(raw) {
+  const s = String(raw).trim().toUpperCase();
+  return s.startsWith('CVE-') ? s : `CVE-${s.replace(/^CVE/, '')}`;
+}
+
 // ---------------------------------------------------------------------
 // search_owasp — semantic search over OWASP Top 10 entries in SecurityKB
 // ---------------------------------------------------------------------
@@ -33,8 +52,10 @@ const SEARCH_OWASP = {
     required: ['query'],
   },
   async handler(args, _ctx) {
+    const query = pick(args, ['query', 'q', 'text', 'search']);
+    if (!query) return { error: 'missing required argument query' };
     return kbVectorSearch({
-      query: args.query,
+      query,
       sources: ['owasp'],
       language: args.language,
       limit: args.limit ?? 3,
@@ -49,21 +70,26 @@ const LOOKUP_CWE = {
   name: 'lookup_cwe',
   description:
     'Fetch a specific CWE (Common Weakness Enumeration) entry by its ' +
-    'identifier, e.g. "CWE-89" for SQL injection, "CWE-79" for XSS. Use ' +
-    'this when you have a strong guess at the weakness category and want ' +
-    'to ground your finding in the canonical definition.',
+    'identifier. The argument name is `cweId` and the value MUST be a ' +
+    'full identifier with the "CWE-" prefix, e.g. "CWE-89" for SQL ' +
+    'injection, "CWE-79" for XSS, "CWE-94" for code injection.',
   inputSchema: {
     type: 'object',
     properties: {
       cweId: {
         type: 'string',
-        description: 'CWE identifier in the form "CWE-89".',
+        description:
+          'Full CWE identifier, e.g. "CWE-79". REQUIRED. Always include the "CWE-" prefix.',
       },
     },
     required: ['cweId'],
   },
   async handler(args, _ctx) {
-    const normalized = String(args.cweId).toUpperCase().trim();
+    const raw = pick(args, ['cweId', 'id', 'cwe', 'identifier']);
+    if (!raw) {
+      return { error: 'missing required argument cweId (e.g. "CWE-79")' };
+    }
+    const normalized = normalizeCweId(raw);
     const doc = await SecurityKB.findOne({
       source: 'cwe',
       identifier: normalized,
@@ -97,7 +123,11 @@ const LOOKUP_CVE = {
     required: ['cveId'],
   },
   async handler(args, _ctx) {
-    const id = String(args.cveId).toUpperCase().trim();
+    const raw = pick(args, ['cveId', 'id', 'cve', 'identifier']);
+    if (!raw) {
+      return { error: 'missing required argument cveId (e.g. "CVE-2021-44228")' };
+    }
+    const id = normalizeCveId(raw);
     try {
       const res = await fetch(`https://api.osv.dev/v1/vulns/${id}`);
       if (res.status === 404) return { found: false, cveId: id };
@@ -208,8 +238,10 @@ const SEARCH_BEST_PRACTICES = {
     required: ['query'],
   },
   async handler(args, _ctx) {
+    const query = pick(args, ['query', 'q', 'text', 'search']);
+    if (!query) return { error: 'missing required argument query' };
     return kbVectorSearch({
-      query: args.query,
+      query,
       sources: ['best_practice'],
       language: args.language,
       limit: args.limit ?? 3,

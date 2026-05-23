@@ -211,15 +211,34 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
         const p3 = await runPhase('reason_exploitability', reasonExploitability);
         ctx.candidatesPhase = p3.parsed;
 
-        // Phase 4 is REFINEMENT — if it fails (e.g. ran out of daily LLM
-        // quota mid-review), we shouldn't lose the perfectly good Phase 3
-        // candidates. Treat them as the refined set and proceed to Phase 5.
+        // Phase 4 is REFINEMENT. Two failure modes:
+        //   (a) it THROWS — quota exhausted, network died, etc.
+        //   (b) it returns null or empty output — LLM produced no parseable
+        //       JSON, common with smaller "lite" models.
+        // In both cases, fall back to Phase 3 candidates as the findings,
+        // so we always produce SOMETHING from a partially-successful run.
+        const hasCandidates =
+          (ctx.candidatesPhase?.candidates?.length ?? 0) > 0;
+
         try {
           const p4 = await runPhase('compare_patterns', comparePatterns);
-          ctx.refinedPhase = p4.parsed;
+          const refinedFindings = p4.parsed?.findings ?? [];
+          if (refinedFindings.length === 0 && hasCandidates) {
+            console.warn(
+              `[agent] Phase 4 produced no findings (parseError: ${p4.parseError ?? 'empty'}); ` +
+                `falling back to Phase 3 candidates.`
+            );
+            ctx.refinedPhase = {
+              findings: ctx.candidatesPhase.candidates,
+              degraded: true,
+              phase4Error: p4.parseError ?? 'phase 4 returned no findings',
+            };
+          } else {
+            ctx.refinedPhase = p4.parsed;
+          }
         } catch (err) {
           console.warn(
-            `[agent] Phase 4 failed (${err.message?.slice(0, 100)}); ` +
+            `[agent] Phase 4 threw (${err.message?.slice(0, 100)}); ` +
               `falling back to Phase 3 candidates as findings.`
           );
           ctx.refinedPhase = {
