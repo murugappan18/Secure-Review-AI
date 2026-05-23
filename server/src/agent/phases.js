@@ -19,6 +19,25 @@ import {
   PHASE_5_PROMPT,
 } from './prompts.js';
 
+// Map Phase 3 confidence + impact-text to a coarse severity for the
+// graceful-degradation path. Conservative: only "critical" when it's clearly
+// RCE-ish, else "high"/"medium" by confidence.
+function severityFromConfidence(confidence, impact = '') {
+  const i = String(impact).toLowerCase();
+  if (i.includes('rce') || i.includes('arbitrary code') || i.includes('full takeover')) {
+    return 'critical';
+  }
+  if ((confidence ?? 0) >= 0.85) return 'high';
+  if ((confidence ?? 0) >= 0.6) return 'medium';
+  return 'low';
+}
+
+function humanizeCategory(slug) {
+  return String(slug)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // Simple {name} substitution for prompts that need variables baked in.
 function fmt(template, vars) {
   return template.replace(/\{(\w+)\}/g, (_, key) =>
@@ -192,8 +211,6 @@ export async function comparePatterns(ctx, runOpts) {
 // PHASE 5: Generate the final review (no tool calls)
 // -------------------------------------------------------------------------
 export async function generateReview(ctx, runOpts) {
-  // If we have nothing to report, fabricate the empty review here without
-  // burning an LLM call.
   const findings = ctx.refinedPhase?.findings ?? [];
   if (findings.length === 0) {
     return {
@@ -203,6 +220,45 @@ export async function generateReview(ctx, runOpts) {
           'No security vulnerabilities were identified by the agent during this review.',
         riskAssessment: 'low',
         findings: [],
+      },
+      parseError: null,
+      shortCircuited: true,
+    };
+  }
+
+  // If Phase 4 degraded (e.g. quota exhausted), synthesize findings from the
+  // Phase 3 candidates WITHOUT a Phase 5 LLM call. The candidates already
+  // have the key fields; we just need to reshape them into the final schema.
+  // This means even a partially-rate-limited review still produces findings.
+  if (ctx.refinedPhase?.degraded) {
+    console.warn('[agent] Phase 5: synthesizing locally from Phase 3 (Phase 4 was degraded)');
+    const synthesized = findings.map((c) => ({
+      severity: severityFromConfidence(c.confidence, c.impact),
+      category: c.category ?? 'unknown',
+      title: c.category
+        ? `${humanizeCategory(c.category)} in ${c.filepath}`
+        : `Potential vulnerability in ${c.filepath}`,
+      description:
+        `${c.impact ?? 'Potential security issue.'} ${c.attackVector ? 'Attack vector: ' + c.attackVector + '.' : ''}`.trim(),
+      filepath: c.filepath ?? 'unknown',
+      startLine: c.startLine ?? 0,
+      endLine: c.endLine ?? c.startLine ?? 0,
+      codeSnippet: Array.isArray(c.evidence) ? c.evidence.join('\n') : (c.evidence ?? ''),
+      suggestedFix: '',
+      references: c.cwe ? [`https://cwe.mitre.org/data/definitions/${String(c.cwe).replace(/^CWE-/i, '')}.html`] : [],
+      confidence: c.confidence ?? 0.6,
+      exploitabilityNotes: c.impact ?? '',
+    }));
+    return {
+      runResult: null,
+      parsed: {
+        summary: `Review partially completed — Phase 4 (codebase comparison) skipped due to: ${ctx.refinedPhase.phase4Error ?? 'unknown error'}. ${synthesized.length} candidate finding(s) from Phase 3 are reported below.`,
+        riskAssessment: synthesized.some((f) => f.severity === 'critical')
+          ? 'critical'
+          : synthesized.some((f) => f.severity === 'high')
+            ? 'high'
+            : 'medium',
+        findings: synthesized,
       },
       parseError: null,
       shortCircuited: true,

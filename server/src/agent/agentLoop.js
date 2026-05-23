@@ -28,7 +28,11 @@ import {
   getPullRequestFiles,
 } from '../services/github.service.js';
 
-const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS) || 180_000;
+// Lazy read — env vars aren't populated at module-load time under ESM
+// (loadDotenv() runs AFTER imports are processed).
+function getAgentTimeoutMs() {
+  return Number(process.env.AGENT_TIMEOUT_MS) || 180_000;
+}
 
 // Pull (owner, repo, prNumber) out of a github.com PR URL.
 export function parsePrUrl(url) {
@@ -152,6 +156,8 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
   });
 
   try {
+    const timeoutMs = getAgentTimeoutMs();
+    console.log(`[agent] timeout budget: ${timeoutMs}ms`);
     await runWithTimeout(
       async () => {
         // Pre-step: fetch PR metadata + file patches up front. This serves
@@ -205,8 +211,23 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
         const p3 = await runPhase('reason_exploitability', reasonExploitability);
         ctx.candidatesPhase = p3.parsed;
 
-        const p4 = await runPhase('compare_patterns', comparePatterns);
-        ctx.refinedPhase = p4.parsed;
+        // Phase 4 is REFINEMENT — if it fails (e.g. ran out of daily LLM
+        // quota mid-review), we shouldn't lose the perfectly good Phase 3
+        // candidates. Treat them as the refined set and proceed to Phase 5.
+        try {
+          const p4 = await runPhase('compare_patterns', comparePatterns);
+          ctx.refinedPhase = p4.parsed;
+        } catch (err) {
+          console.warn(
+            `[agent] Phase 4 failed (${err.message?.slice(0, 100)}); ` +
+              `falling back to Phase 3 candidates as findings.`
+          );
+          ctx.refinedPhase = {
+            findings: ctx.candidatesPhase?.candidates ?? [],
+            degraded: true,
+            phase4Error: err.message?.slice(0, 200),
+          };
+        }
 
         const p5 = await runPhase('generate_review', generateReview);
 
@@ -233,8 +254,8 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
               .join('; ');
         }
       },
-      AGENT_TIMEOUT_MS,
-      `agent timeout exceeded (${AGENT_TIMEOUT_MS}ms)`
+      timeoutMs,
+      `agent timeout exceeded (${timeoutMs}ms)`
     );
 
     review.status = 'complete';
