@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
 import { backendUrl } from '../lib/api.js';
+import Footer from '../components/Footer.jsx';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -15,7 +16,8 @@ export default function Landing() {
   }, [token, navigate]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <main className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-lg text-center">
         <h1 className="text-4xl font-semibold mb-3">SecureReview AI</h1>
         <p className="text-slate-400 mb-10 leading-relaxed">
@@ -52,6 +54,8 @@ export default function Landing() {
           revoke access anytime from your GitHub settings.
         </p>
       </div>
+      </main>
+      <Footer />
     </div>
   );
 }

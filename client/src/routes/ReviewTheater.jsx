@@ -4,6 +4,7 @@ import { StopCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 import { useReviewStream } from '../hooks/useReviewStream.js';
+import Footer from '../components/Footer.jsx';
 import SeverityPill, {
   ProviderPill,
   StatusPill,
@@ -63,7 +64,7 @@ export default function ReviewTheater() {
   const order = ['critical', 'high', 'medium', 'low', 'info'];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Top nav */}
       <header className="border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
@@ -201,6 +202,7 @@ export default function ReviewTheater() {
           </div>
         </>
       )}
+      <Footer />
     </div>
   );
 }

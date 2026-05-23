@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 import SeverityPill, { ProviderPill, StatusPill } from '../components/review/SeverityPill.jsx';
+import Footer from '../components/Footer.jsx';
 
 export default function Reviews() {
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ export default function Reviews() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -59,7 +60,7 @@ export default function Reviews() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-8 flex-1 w-full">
         <div className="mb-6">
           <h2 className="text-xl font-medium mb-1">Reviews</h2>
           <p className="text-sm text-slate-400">
@@ -123,6 +124,7 @@ export default function Reviews() {
           </ul>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

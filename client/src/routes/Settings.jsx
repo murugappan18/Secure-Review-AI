@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
+import Footer from '../components/Footer.jsx';
 
 const PROVIDER_INFO = {
   gemini: {
@@ -57,7 +58,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -93,7 +94,7 @@ export default function Settings() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-3xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
         <div>
           <h2 className="text-2xl font-medium mb-1">Settings</h2>
           <p className="text-sm text-slate-400">
@@ -134,6 +135,7 @@ export default function Settings() {
           </>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

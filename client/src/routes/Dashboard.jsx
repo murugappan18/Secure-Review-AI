@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
+import Footer from '../components/Footer.jsx';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -84,7 +85,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -120,7 +121,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8 flex-1 w-full">
         <NotConfiguredBanner />
 
         {/* --- Submit a PR for review --- */}
@@ -218,6 +219,7 @@ export default function Dashboard() {
           )}
         </section>
       </main>
+      <Footer />
     </div>
   );
 }
