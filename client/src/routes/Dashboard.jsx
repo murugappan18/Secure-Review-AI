@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
@@ -8,6 +9,8 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [prUrl, setPrUrl] = useState('');
+  const [prError, setPrError] = useState(null);
 
   // Repo list with embedded index status. Poll every 2s while ANY repo is
   // currently being indexed, so progress bars update live.
@@ -34,6 +37,30 @@ export default function Dashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['repos'] }),
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: async (url) => {
+      const res = await api.post('/api/reviews', { prUrl: url });
+      return res.data.review;
+    },
+    onSuccess: (review) => {
+      navigate(`/reviews/${review._id}`);
+    },
+    onError: (err) => {
+      setPrError(err.response?.data?.error || err.message);
+    },
+  });
+
+  function handleSubmitReview(e) {
+    e.preventDefault();
+    setPrError(null);
+    const trimmed = prUrl.trim();
+    if (!/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(trimmed)) {
+      setPrError('Please enter a valid GitHub PR URL (https://github.com/owner/repo/pull/N).');
+      return;
+    }
+    reviewMutation.mutate(trimmed);
+  }
+
   function handleLogout() {
     logout();
     navigate('/', { replace: true });
@@ -43,7 +70,17 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold">SecureReview AI</h1>
+          <div className="flex items-center gap-6">
+            <h1 className="text-lg font-semibold">SecureReview AI</h1>
+            <nav className="flex gap-4 text-sm">
+              <Link to="/dashboard" className="text-slate-100 font-medium">
+                Dashboard
+              </Link>
+              <Link to="/reviews" className="text-slate-400 hover:text-slate-100">
+                Reviews
+              </Link>
+            </nav>
+          </div>
           <div className="flex items-center gap-3">
             {user?.avatarUrl && (
               <img
@@ -63,62 +100,96 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h2 className="text-xl font-medium mb-1">Your repositories</h2>
-          <p className="text-sm text-slate-400">
-            Pick one to index — we'll clone it, parse with tree-sitter, and store
-            function-level chunks for semantic search.
+      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+        {/* --- Submit a PR for review --- */}
+        <section className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-6">
+          <h2 className="text-lg font-medium mb-1">Review a pull request</h2>
+          <p className="text-sm text-slate-400 mb-4">
+            Paste a GitHub PR URL. We&apos;ll analyze the diff for security issues with
+            agentic reasoning over your codebase.
           </p>
-        </div>
-
-        {isLoading && <p className="text-slate-400 text-sm">Loading repos...</p>}
-
-        {isError && (
-          <p className="text-red-400 font-mono text-sm">
-            Failed to fetch repos: {error.response?.data?.error || error.message}
+          <form onSubmit={handleSubmitReview} className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={prUrl}
+              onChange={(e) => setPrUrl(e.target.value)}
+              placeholder="https://github.com/owner/repo/pull/123"
+              className="flex-1 bg-slate-950/60 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-slate-500"
+              disabled={reviewMutation.isPending}
+            />
+            <button
+              type="submit"
+              disabled={reviewMutation.isPending}
+              className="px-4 py-2 rounded bg-slate-100 text-slate-900 text-sm font-medium hover:bg-white disabled:opacity-60 disabled:cursor-wait whitespace-nowrap"
+            >
+              {reviewMutation.isPending ? 'Starting...' : 'Review PR'}
+            </button>
+          </form>
+          {prError && (
+            <p className="text-red-400 font-mono text-xs mt-2">{prError}</p>
+          )}
+          <p className="text-[11px] text-slate-500 mt-3">
+            Tip: index the repo first (below) for richer cross-file analysis.
           </p>
-        )}
+        </section>
 
-        {data && (
-          <ul className="space-y-2">
-            {data.map((repo) => (
-              <li
-                key={repo.id}
-                className="rounded-lg border border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <a
-                      href={repo.htmlUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-sm text-slate-200 hover:underline truncate"
-                    >
-                      {repo.fullName}
-                    </a>
-                    {repo.private && <Pill tone="neutral">private</Pill>}
-                    {repo.language && <Pill tone="lang">{repo.language}</Pill>}
+        {/* --- Repositories --- */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-medium mb-1">Your repositories</h2>
+            <p className="text-sm text-slate-400">
+              Indexing parses the repo into semantic chunks so the agent can search by meaning.
+            </p>
+          </div>
+
+          {isLoading && <p className="text-slate-400 text-sm">Loading repos...</p>}
+
+          {isError && (
+            <p className="text-red-400 font-mono text-sm">
+              Failed to fetch repos: {error.response?.data?.error || error.message}
+            </p>
+          )}
+
+          {data && (
+            <ul className="space-y-2">
+              {data.map((repo) => (
+                <li
+                  key={repo.id}
+                  className="rounded-lg border border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <a
+                        href={repo.htmlUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono text-sm text-slate-200 hover:underline truncate"
+                      >
+                        {repo.fullName}
+                      </a>
+                      {repo.private && <Pill tone="neutral">private</Pill>}
+                      {repo.language && <Pill tone="lang">{repo.language}</Pill>}
+                    </div>
+                    {repo.description && (
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-1">
+                        {repo.description}
+                      </p>
+                    )}
                   </div>
-                  {repo.description && (
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-                      {repo.description}
-                    </p>
-                  )}
-                </div>
 
-                <IndexAction
-                  repo={repo}
-                  onIndex={() => indexMutation.mutate(repo)}
-                  isStarting={
-                    indexMutation.isPending &&
-                    indexMutation.variables?.id === repo.id
-                  }
-                />
-              </li>
-            ))}
-          </ul>
-        )}
+                  <IndexAction
+                    repo={repo}
+                    onIndex={() => indexMutation.mutate(repo)}
+                    isStarting={
+                      indexMutation.isPending &&
+                      indexMutation.variables?.id === repo.id
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </main>
     </div>
   );
@@ -195,7 +266,6 @@ function IndexAction({ repo, onIndex, isStarting }) {
     );
   }
 
-  // not_indexed
   return (
     <button
       onClick={onIndex}

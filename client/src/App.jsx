@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Landing from './routes/Landing.jsx';
 import AuthCallback from './routes/AuthCallback.jsx';
 import Dashboard from './routes/Dashboard.jsx';
+import Reviews from './routes/Reviews.jsx';
+import ReviewTheater from './routes/ReviewTheater.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 const queryClient = new QueryClient({
@@ -26,6 +28,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reviews"
+            element={
+              <ProtectedRoute>
+                <Reviews />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reviews/:id"
+            element={
+              <ProtectedRoute>
+                <ReviewTheater />
               </ProtectedRoute>
             }
           />
