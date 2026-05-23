@@ -97,7 +97,7 @@
     "description": "Hardcoded keys, tokens, and passwords leak the moment the repo is cloned, archived, or breached. Use process.env for runtime configuration; commit only .env.example with placeholder values. Use a secret manager (AWS Secrets Manager, Vault) for production.",
     "language": "all",
     "examples": {
-      "vulnerable": "const STRIPE = 'sk_live_4eC39HqLyjWDarjtT1zdp7dc';",
+      "vulnerable": "const STRIPE = '<YOUR_STRIPE_KEY>'; // hardcoded — committed once = leaked forever",
       "safe": "const STRIPE = process.env.STRIPE_SECRET_KEY;\nif (!STRIPE) throw new Error('STRIPE_SECRET_KEY missing');"
     },
     "references": ["https://cwe.mitre.org/data/definitions/798.html"],

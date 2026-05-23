@@ -136,7 +136,7 @@
     "description": "The product stores sensitive information in cleartext within a resource that might be accessible to another control sphere. Includes storing passwords in plain DB columns, secrets/tokens in localStorage where any XSS reads them, plaintext config files committed to repos, and logs that capture full payloads including credentials.",
     "language": "all",
     "examples": {
-      "vulnerable": "// API key in source — anyone who clones the repo has it\nconst COLOR_API_KEY = 'sk_live_a7d2f8e4c1b3946e08f2a5b7d9c3e1f4';",
+      "vulnerable": "// API key in source — anyone who clones the repo has it\nconst COLOR_API_KEY = '<YOUR_API_KEY>';",
       "safe": "// Load from process.env at runtime; never commit .env\nconst COLOR_API_KEY = process.env.COLOR_API_KEY;\nif (!COLOR_API_KEY) throw new Error('COLOR_API_KEY missing');"
     },
     "references": ["https://cwe.mitre.org/data/definitions/312.html"],
@@ -201,7 +201,7 @@
     "description": "The product contains hard-coded credentials, such as a password or cryptographic key, which it uses for its own inbound authentication, outbound communication to external components, or encryption of internal data. Once committed to source control, the secret is effectively public and rotating it is painful. Always load from environment variables or a secret manager.",
     "language": "all",
     "examples": {
-      "vulnerable": "const COLOR_API_KEY = 'sk_live_a7d2f8e4c1b3946e08f2a5b7d9c3e1f4';\nconst DB_PASSWORD = 'admin123';",
+      "vulnerable": "const COLOR_API_KEY = '<YOUR_API_KEY>';\nconst DB_PASSWORD = 'admin123';",
       "safe": "const COLOR_API_KEY = process.env.COLOR_API_KEY;\nif (!COLOR_API_KEY) throw new Error('COLOR_API_KEY missing');"
     },
     "references": ["https://cwe.mitre.org/data/definitions/798.html"],
