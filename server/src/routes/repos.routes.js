@@ -48,6 +48,16 @@ router.post('/:owner/:name/index', requireAuth, async (req, res, next) => {
     const fullName = `${owner}/${name}`;
     const accessToken = req.user.getAccessToken();
 
+    // Indexing embeds chunks via Gemini — requires the user's Gemini key.
+    // Gate here so we don't kick off a clone that's guaranteed to fail.
+    if (!req.user.getApiKey('gemini')) {
+      return res.status(403).json({
+        error: 'no_gemini_key_configured',
+        message:
+          'Indexing requires a Gemini API key (used for embeddings). Add one in Settings before indexing.',
+      });
+    }
+
     // Pull GitHub metadata to populate language / defaultBranch / size.
     const meta = await getRepoMetadata(owner, name, accessToken);
 

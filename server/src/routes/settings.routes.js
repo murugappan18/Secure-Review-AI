@@ -39,7 +39,11 @@ function serializeSettings(user) {
     providers: {},
     defaultProvider: user.settings?.defaultProvider ?? null,
     availableModels: AVAILABLE_MODELS,
-    isDemoMode: !user.hasAnyOwnKey(),
+    // Pure BYOK gate: app actions are blocked until isConfigured = true.
+    // A user is configured iff they have at least one enabled provider
+    // with a key on file.
+    isConfigured: user.hasUsableProvider(),
+    usableProviders: user.usableProviders(),
   };
   for (const p of PROVIDERS) {
     const ak = user.settings?.apiKeys?.[p];

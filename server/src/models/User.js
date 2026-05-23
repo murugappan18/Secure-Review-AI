@@ -155,10 +155,27 @@ userSchema.methods.isProviderEnabled = function isProviderEnabled(provider) {
 };
 
 // Has the user configured at least one of their own API keys?
-// Drives the "demo mode" banner — false means they're piggybacking on
-// the admin's env keys.
 userSchema.methods.hasAnyOwnKey = function hasAnyOwnKey() {
   return PROVIDERS.some((p) => !!this.settings?.apiKeys?.[p]?.encryptedKey);
+};
+
+// Pure BYOK gate: a user is "usable" iff at least one provider is both
+// enabled AND has a key on file. The routes call this before doing any
+// LLM work — no key, no review.
+userSchema.methods.hasUsableProvider = function hasUsableProvider() {
+  return PROVIDERS.some(
+    (p) =>
+      !!this.settings?.apiKeys?.[p]?.encryptedKey &&
+      this.settings?.providers?.[p]?.enabled === true
+  );
+};
+
+userSchema.methods.usableProviders = function usableProviders() {
+  return PROVIDERS.filter(
+    (p) =>
+      !!this.settings?.apiKeys?.[p]?.encryptedKey &&
+      this.settings?.providers?.[p]?.enabled === true
+  );
 };
 
 // Snapshot user's BYOK state in a shape suitable for stashing in
@@ -173,6 +190,8 @@ userSchema.methods.toUserContext = function toUserContext() {
     enabledProviders: new Set(),
     defaultProvider: this.settings?.defaultProvider ?? null,
     hasAnyOwnKey: this.hasAnyOwnKey(),
+    hasUsableProvider: this.hasUsableProvider(),
+    usableProviders: this.usableProviders(),
   };
   for (const p of PROVIDERS) {
     const key = this.getApiKey(p);

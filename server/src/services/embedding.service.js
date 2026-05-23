@@ -21,13 +21,15 @@ const MAX_BATCH = 100; // Google's per-request limit for batchEmbedContents
 const MAX_INPUT_CHARS = 6000; // ~1500 tokens; safe under 2048 limit
 
 function getApiKey() {
-  // BYOK: prefer the user's key, fall back to admin env key.
+  // Pure BYOK — embeddings use the user's Gemini key (the only provider
+  // we use for embeddings). No admin fallback.
   const userKey = getUserApiKey('gemini');
-  const key = userKey || process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error('[embed] no Gemini API key (user has none, env has none)');
+  if (!userKey) {
+    const err = new Error('[embed] no Gemini API key configured for this user');
+    err.code = 'NO_USER_API_KEY';
+    throw err;
   }
-  return key;
+  return userKey;
 }
 
 function prep(text) {

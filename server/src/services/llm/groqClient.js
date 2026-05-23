@@ -53,18 +53,15 @@ function toGroqTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  const apiKey = getUserApiKey('groq') || process.env.GROQ_API_KEY;
+  // Pure BYOK — no env fallback.
+  const apiKey = getUserApiKey('groq');
   if (!apiKey) {
-    const err = new Error('[groq] no API key (user has none, env has none)');
-    err.code = 'NO_API_KEY';
+    const err = new Error('[groq] no Groq API key configured for this user');
+    err.code = 'NO_USER_API_KEY';
     throw err;
   }
 
-  const modelName =
-    model ||
-    getUserModel('groq') ||
-    process.env.GROQ_MODEL ||
-    'llama-3.3-70b-versatile';
+  const modelName = model || getUserModel('groq') || 'llama-3.3-70b-versatile';
   const client = new Groq({ apiKey });
 
   const response = await client.chat.completions.create({

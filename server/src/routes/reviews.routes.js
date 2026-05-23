@@ -34,6 +34,16 @@ router.post('/', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'invalid_pr_url' });
     }
 
+    // Pure BYOK gate — no fallback to admin keys. Block early so we don't
+    // create a Review doc that's guaranteed to fail.
+    if (!req.user.hasUsableProvider()) {
+      return res.status(403).json({
+        error: 'no_api_key_configured',
+        message:
+          'Add an API key in Settings before submitting a review. The app needs at least one enabled provider (Gemini, Claude, or Groq) with a key configured.',
+      });
+    }
+
     const accessToken = req.user.getAccessToken();
 
     // Probe the PR via GitHub API BEFORE creating a Review doc. This catches:

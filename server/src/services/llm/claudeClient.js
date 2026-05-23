@@ -70,18 +70,15 @@ function toClaudeTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  const apiKey = getUserApiKey('claude') || process.env.ANTHROPIC_API_KEY;
+  // Pure BYOK — no env fallback.
+  const apiKey = getUserApiKey('claude');
   if (!apiKey) {
-    const err = new Error('[claude] no API key (user has none, env has none)');
-    err.code = 'NO_API_KEY';
+    const err = new Error('[claude] no Claude API key configured for this user');
+    err.code = 'NO_USER_API_KEY';
     throw err;
   }
 
-  const modelName =
-    model ||
-    getUserModel('claude') ||
-    process.env.CLAUDE_MODEL ||
-    'claude-sonnet-4-5';
+  const modelName = model || getUserModel('claude') || 'claude-sonnet-4-5';
   const client = new Anthropic({ apiKey });
 
   const response = await client.messages.create({

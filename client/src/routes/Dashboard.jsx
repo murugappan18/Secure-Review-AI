@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Sparkles, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 
@@ -29,6 +29,18 @@ export default function Dashboard() {
       return anyIndexing ? 2000 : false;
     },
   });
+
+  // BYOK gate: certain actions are disabled until the user configures keys.
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const res = await api.get('/api/settings');
+      return res.data.settings;
+    },
+    staleTime: 60_000,
+  });
+  const canReview = settings?.isConfigured === true;
+  const canIndex = settings?.apiKeys?.gemini?.configured === true;
 
   const indexMutation = useMutation({
     mutationFn: async (repo) => {
@@ -109,7 +121,7 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
-        <DemoModeBanner />
+        <NotConfiguredBanner />
 
         {/* --- Submit a PR for review --- */}
         <section className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-6">
@@ -129,8 +141,9 @@ export default function Dashboard() {
             />
             <button
               type="submit"
-              disabled={reviewMutation.isPending}
-              className="px-4 py-2 rounded bg-slate-100 text-slate-900 text-sm font-medium hover:bg-white disabled:opacity-60 disabled:cursor-wait whitespace-nowrap"
+              disabled={reviewMutation.isPending || !canReview}
+              title={!canReview ? 'Add an API key in Settings to enable reviews' : ''}
+              className="px-4 py-2 rounded bg-slate-100 text-slate-900 text-sm font-medium hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               {reviewMutation.isPending ? 'Starting...' : 'Review PR'}
             </button>
@@ -197,6 +210,7 @@ export default function Dashboard() {
                       indexMutation.isPending &&
                       indexMutation.variables?.id === repo.id
                     }
+                    canIndex={canIndex}
                   />
                 </li>
               ))}
@@ -298,9 +312,7 @@ function RepoIndexHint({ prUrl, repos, onIndex, isStarting }) {
   );
 }
 
-function DemoModeBanner() {
-  // Cheap settings fetch — TanStack caches across pages so this is a no-op
-  // network-wise once the user has visited Settings.
+function NotConfiguredBanner() {
   const { data } = useQuery({
     queryKey: ['settings'],
     queryFn: async () => {
@@ -309,18 +321,24 @@ function DemoModeBanner() {
     },
     staleTime: 60_000,
   });
-  if (!data?.isDemoMode) return null;
+  if (!data || data.isConfigured) return null;
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex items-center gap-3">
-      <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-      <p className="text-xs text-amber-200/90 flex-1">
-        You&apos;re running on the app&apos;s shared free quota.
-      </p>
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 flex items-center gap-3">
+      <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
+      <div className="flex-1">
+        <p className="text-sm font-medium text-amber-200">
+          Configure an API key before you can run reviews
+        </p>
+        <p className="text-xs text-amber-200/80 mt-0.5">
+          SecureReview AI is bring-your-own-keys. Add a Gemini, Claude, or
+          Groq key in Settings to enable the Review and Index buttons.
+        </p>
+      </div>
       <Link
         to="/settings"
-        className="text-xs text-amber-200 hover:text-amber-100 underline whitespace-nowrap"
+        className="text-xs text-amber-200 hover:text-amber-100 underline whitespace-nowrap font-medium"
       >
-        Add your own keys →
+        Open Settings →
       </Link>
     </div>
   );
@@ -343,8 +361,9 @@ function Pill({ children, tone = 'neutral' }) {
   );
 }
 
-function IndexAction({ repo, onIndex, isStarting }) {
+function IndexAction({ repo, onIndex, isStarting, canIndex = true }) {
   const status = repo.indexStatus ?? 'not_indexed';
+  const disabledTitle = canIndex ? '' : 'Add a Gemini API key in Settings to enable indexing';
 
   if (status === 'ready') {
     return (
@@ -355,7 +374,9 @@ function IndexAction({ repo, onIndex, isStarting }) {
         </span>
         <button
           onClick={onIndex}
-          className="text-[10px] text-slate-400 hover:text-slate-200 underline"
+          disabled={!canIndex}
+          title={disabledTitle}
+          className="text-[10px] text-slate-400 hover:text-slate-200 underline disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
         >
           Re-index
         </button>
@@ -398,8 +419,9 @@ function IndexAction({ repo, onIndex, isStarting }) {
   return (
     <button
       onClick={onIndex}
-      disabled={isStarting}
-      className="text-xs text-slate-200 px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-wait"
+      disabled={isStarting || !canIndex}
+      title={disabledTitle}
+      className="text-xs text-slate-200 px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
     >
       {isStarting ? 'Starting...' : 'Index'}
     </button>

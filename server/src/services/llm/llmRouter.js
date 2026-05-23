@@ -112,13 +112,13 @@ function providerChain(preferred) {
 }
 
 // "Is this provider usable for the current caller right now?"
-// Combines env-disabled, runtime-disabled, AND BYOK user-enabled flags.
-// In demo mode (user has no own keys), we don't filter by user-enabled —
-// the env keys are the safety net.
+// Pure BYOK: only providers the user has explicitly enabled (and has a key
+// for) are eligible. Scripts that run without user context (no ALS) get a
+// permissive path so dev tools still work — production calls always run
+// inside a user context set by requireAuth.
 function isProviderAllowedForUser(providerName) {
   const ctx = getCurrentUserContext();
-  if (!ctx) return true; // no user (scripts, tests) — anything goes
-  if (!ctx.hasAnyOwnKey) return true; // demo mode — env keys back everything
+  if (!ctx) return true; // no user (scripts, tests)
   return ctx.enabledProviders?.has?.(providerName) ?? false;
 }
 

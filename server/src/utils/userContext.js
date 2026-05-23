@@ -50,8 +50,15 @@ export function getUserDefaultProvider() {
   return ctx?.defaultProvider ?? null;
 }
 
-export function isInDemoMode() {
+// Returns true iff the user has at least one provider enabled with a key.
+// Routes call this for pre-flight before any LLM-touching action.
+export function userHasUsableProvider() {
   const ctx = als.getStore();
-  if (!ctx) return false;
-  return !ctx.hasAnyOwnKey;
+  if (!ctx) return true; // scripts — assume yes
+  return ctx.hasUsableProvider === true;
+}
+
+export function userUsableProviders() {
+  const ctx = als.getStore();
+  return ctx?.usableProviders ?? [];
 }

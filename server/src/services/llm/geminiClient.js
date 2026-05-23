@@ -116,20 +116,18 @@ function toGeminiTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  // BYOK precedence: user's stored key wins, else admin env key (demo mode).
-  const apiKey = getUserApiKey('gemini') || process.env.GEMINI_API_KEY;
+  // Pure BYOK — no env fallback. Routes pre-flight users, so reaching this
+  // path without a key is a code bug (or a dev script that should set its
+  // own context).
+  const apiKey = getUserApiKey('gemini');
   if (!apiKey) {
-    const err = new Error('[gemini] no API key (user has none, env has none)');
-    err.code = 'NO_API_KEY';
+    const err = new Error('[gemini] no Gemini API key configured for this user');
+    err.code = 'NO_USER_API_KEY';
     throw err;
   }
 
-  // Model precedence: explicit call arg > user preference > env > hardcoded.
-  const modelName =
-    model ||
-    getUserModel('gemini') ||
-    process.env.GEMINI_MODEL ||
-    'gemini-3.1-flash-lite';
+  // Model: explicit arg > user preference > sensible default.
+  const modelName = model || getUserModel('gemini') || 'gemini-3.1-flash-lite';
   const genai = new GoogleGenerativeAI(apiKey);
   const { contents, systemInstruction } = toGeminiContents(messages);
 

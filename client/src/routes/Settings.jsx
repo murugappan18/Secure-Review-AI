@@ -8,7 +8,6 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
-  Sparkles,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
@@ -111,7 +110,7 @@ export default function Settings() {
 
         {data && (
           <>
-            {data.isDemoMode && <DemoModeBanner />}
+            {!data.isConfigured && <NotConfiguredBanner />}
 
             <section className="space-y-4">
               <h3 className="text-sm uppercase tracking-wider text-slate-500 font-medium">
@@ -141,15 +140,27 @@ export default function Settings() {
 
 // -----------------------------------------------------------------------
 
-function DemoModeBanner() {
+function NotConfiguredBanner() {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
-      <Sparkles className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3">
+      <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
       <div className="flex-1">
-        <p className="text-sm font-medium text-amber-200">You&apos;re using Demo Mode</p>
-        <p className="text-xs text-amber-200/70 mt-1">
-          Reviews currently use the app&apos;s shared free quota. Add your own
-          API key below to remove rate limits and pick your own models.
+        <p className="text-sm font-medium text-amber-200">
+          Add an API key to start using the app
+        </p>
+        <p className="text-xs text-amber-200/80 mt-1 leading-relaxed">
+          SecureReview AI is bring-your-own-keys — reviews and indexing won&apos;t
+          run until at least one provider below is enabled AND has a key
+          configured. Free Gemini keys at{' '}
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-amber-100"
+          >
+            aistudio.google.com/app/apikey
+          </a>
+          .
         </p>
       </div>
     </div>
