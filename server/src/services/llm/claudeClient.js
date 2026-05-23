@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getUserApiKey, getUserModel } from '../../utils/userContext.js';
 
 // Claude's messages API takes a separate `system` parameter (not a message)
 // and represents tool use as `tool_use` / `tool_result` content blocks
@@ -69,14 +70,18 @@ function toClaudeTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = getUserApiKey('claude') || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    const err = new Error('[claude] ANTHROPIC_API_KEY is not set');
+    const err = new Error('[claude] no API key (user has none, env has none)');
     err.code = 'NO_API_KEY';
     throw err;
   }
 
-  const modelName = model || process.env.CLAUDE_MODEL || 'claude-sonnet-4-5';
+  const modelName =
+    model ||
+    getUserModel('claude') ||
+    process.env.CLAUDE_MODEL ||
+    'claude-sonnet-4-5';
   const client = new Anthropic({ apiKey });
 
   const response = await client.messages.create({

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Sparkles } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 
@@ -79,6 +80,9 @@ export default function Dashboard() {
               <Link to="/reviews" className="text-slate-400 hover:text-slate-100">
                 Reviews
               </Link>
+              <Link to="/settings" className="text-slate-400 hover:text-slate-100">
+                Settings
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-3">
@@ -101,6 +105,8 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+        <DemoModeBanner />
+
         {/* --- Submit a PR for review --- */}
         <section className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-6">
           <h2 className="text-lg font-medium mb-1">Review a pull request</h2>
@@ -196,6 +202,34 @@ export default function Dashboard() {
 }
 
 // --- presentational pieces ---------------------------------------------
+
+function DemoModeBanner() {
+  // Cheap settings fetch — TanStack caches across pages so this is a no-op
+  // network-wise once the user has visited Settings.
+  const { data } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const res = await api.get('/api/settings');
+      return res.data.settings;
+    },
+    staleTime: 60_000,
+  });
+  if (!data?.isDemoMode) return null;
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex items-center gap-3">
+      <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+      <p className="text-xs text-amber-200/90 flex-1">
+        You&apos;re running on the app&apos;s shared free quota.
+      </p>
+      <Link
+        to="/settings"
+        className="text-xs text-amber-200 hover:text-amber-100 underline whitespace-nowrap"
+      >
+        Add your own keys →
+      </Link>
+    </div>
+  );
+}
 
 function Pill({ children, tone = 'neutral' }) {
   const tones = {

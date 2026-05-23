@@ -42,6 +42,9 @@ export default function Reviews() {
               <a href="/reviews" className="text-slate-100 font-medium">
                 Reviews
               </a>
+              <a href="/settings" className="text-slate-400 hover:text-slate-100">
+                Settings
+              </a>
             </nav>
           </div>
           <div className="flex items-center gap-3">

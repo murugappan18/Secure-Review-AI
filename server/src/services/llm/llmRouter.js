@@ -1,6 +1,10 @@
 import * as gemini from './geminiClient.js';
 import * as groq from './groqClient.js';
 import * as claude from './claudeClient.js';
+import {
+  getCurrentUserContext,
+  getUserDefaultProvider,
+} from '../../utils/userContext.js';
 
 const CLIENTS = { gemini, groq, claude };
 
@@ -107,6 +111,17 @@ function providerChain(preferred) {
   return chain;
 }
 
+// "Is this provider usable for the current caller right now?"
+// Combines env-disabled, runtime-disabled, AND BYOK user-enabled flags.
+// In demo mode (user has no own keys), we don't filter by user-enabled —
+// the env keys are the safety net.
+function isProviderAllowedForUser(providerName) {
+  const ctx = getCurrentUserContext();
+  if (!ctx) return true; // no user (scripts, tests) — anything goes
+  if (!ctx.hasAnyOwnKey) return true; // demo mode — env keys back everything
+  return ctx.enabledProviders?.has?.(providerName) ?? false;
+}
+
 // chat({ messages, tools, preferProvider?, model? })
 //
 // Tries the preferred provider first, then the failover chain. Returns the
@@ -114,7 +129,12 @@ function providerChain(preferred) {
 // array showing the attempts (useful for the Review Theater UI in Phase 9 to
 // say "fell back from gemini → claude after rate limit").
 export async function chat({ messages, tools, preferProvider, model }) {
-  const primary = preferProvider || process.env.PRIMARY_LLM || 'gemini';
+  // Primary precedence: explicit arg > user's default > env default > gemini.
+  const primary =
+    preferProvider ||
+    getUserDefaultProvider() ||
+    process.env.PRIMARY_LLM ||
+    'gemini';
   const chain = providerChain(primary);
   const tried = [];
 
@@ -127,6 +147,11 @@ export async function chat({ messages, tools, preferProvider, model }) {
       const reason = disabledProviders().get(providerName);
       console.log(`[llm] skipping ${providerName} (disabled: ${reason})`);
       tried.push({ provider: providerName, status: `disabled:${reason}` });
+      continue;
+    }
+    if (!isProviderAllowedForUser(providerName)) {
+      console.log(`[llm] skipping ${providerName} (not enabled for this user)`);
+      tried.push({ provider: providerName, status: 'user_disabled' });
       continue;
     }
 

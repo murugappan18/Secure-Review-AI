@@ -5,6 +5,7 @@ import AuthCallback from './routes/AuthCallback.jsx';
 import Dashboard from './routes/Dashboard.jsx';
 import Reviews from './routes/Reviews.jsx';
 import ReviewTheater from './routes/ReviewTheater.jsx';
+import Settings from './routes/Settings.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 const queryClient = new QueryClient({
@@ -44,6 +45,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ReviewTheater />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
               </ProtectedRoute>
             }
           />

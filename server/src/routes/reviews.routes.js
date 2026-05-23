@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { parsePrUrl, runReview } from '../agent/agentLoop.js';
 import { reviewEventBus } from '../sockets/eventBus.js';
+import { runWithUserContext } from '../utils/userContext.js';
 import Review from '../models/Review.js';
 
 const router = Router();
@@ -34,28 +35,30 @@ router.post('/', requireAuth, async (req, res, next) => {
     });
 
     const accessToken = req.user.getAccessToken();
+    // Snapshot the user's BYOK context so the background agent uses the
+    // SAME keys/models the user has configured RIGHT NOW. Subsequent
+    // setting changes don't affect in-flight reviews.
+    const userCtx = req.userContext;
 
     // Fire-and-forget. The orchestrator persists everything to the Review
-    // doc, and clients poll for status.
+    // doc; events publish to the EventBus so Socket.IO subscribers get
+    // live updates without polling.
     setImmediate(() => {
-      runReview({
-        reviewId: review._id,
-        accessToken,
-        emitter: (ev) => {
-          // Phase 10 will replace this with io.to(`review:${reviewId}`).emit(...).
-          // For now, log to console for debugging.
-          if (
-            ev.type !== 'iteration_start' &&
-            ev.type !== 'llm_response'
-          ) {
-            console.log(`[review:${review._id}] ${ev.type}`, ev.phase ?? '');
-          }
-          // Publish to the in-process bus so Socket.IO subscribers receive
-          // live updates without polling. The bus is reviewId-scoped.
-          reviewEventBus.publish(String(review._id), ev);
-        },
-      }).catch((err) => {
-        console.error(`[review:${review._id}] runReview crashed:`, err);
+      // Re-establish user context inside the new async chain. setImmediate
+      // can lose the parent ALS frame depending on Node version.
+      runWithUserContext(userCtx, () => {
+        runReview({
+          reviewId: review._id,
+          accessToken,
+          emitter: (ev) => {
+            if (ev.type !== 'iteration_start' && ev.type !== 'llm_response') {
+              console.log(`[review:${review._id}] ${ev.type}`, ev.phase ?? '');
+            }
+            reviewEventBus.publish(String(review._id), ev);
+          },
+        }).catch((err) => {
+          console.error(`[review:${review._id}] runReview crashed:`, err);
+        });
       });
     });
 

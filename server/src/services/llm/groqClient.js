@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk';
 import { parseArgs } from './types.js';
+import { getUserApiKey, getUserModel } from '../../utils/userContext.js';
 
 // Groq exposes an OpenAI-compatible chat completions API, so the message and
 // tool-call shapes are essentially OpenAI's.
@@ -52,14 +53,18 @@ function toGroqTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = getUserApiKey('groq') || process.env.GROQ_API_KEY;
   if (!apiKey) {
-    const err = new Error('[groq] GROQ_API_KEY is not set');
+    const err = new Error('[groq] no API key (user has none, env has none)');
     err.code = 'NO_API_KEY';
     throw err;
   }
 
-  const modelName = model || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelName =
+    model ||
+    getUserModel('groq') ||
+    process.env.GROQ_MODEL ||
+    'llama-3.3-70b-versatile';
   const client = new Groq({ apiKey });
 
   const response = await client.chat.completions.create({

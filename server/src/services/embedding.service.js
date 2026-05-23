@@ -1,5 +1,10 @@
+import { getUserApiKey } from '../utils/userContext.js';
+
 // Embeddings via Google's gemini-embedding-001 (Matryoshka — full 3072 dims,
 // truncated to 768 by passing outputDimensionality).
+//
+// BYOK: if the user has their own Gemini key configured, embedding requests
+// use it (their quota). Otherwise falls back to the admin env key.
 //
 // We originally targeted Xenova/bge-small-en-v1.5 (local, 384-dim, free) per
 // INSTRUCTIONS.md, but Cognizant's Zscaler agent blocks huggingface.co at the
@@ -16,9 +21,11 @@ const MAX_BATCH = 100; // Google's per-request limit for batchEmbedContents
 const MAX_INPUT_CHARS = 6000; // ~1500 tokens; safe under 2048 limit
 
 function getApiKey() {
-  const key = process.env.GEMINI_API_KEY;
+  // BYOK: prefer the user's key, fall back to admin env key.
+  const userKey = getUserApiKey('gemini');
+  const key = userKey || process.env.GEMINI_API_KEY;
   if (!key) {
-    throw new Error('[embed] GEMINI_API_KEY is required for embeddings');
+    throw new Error('[embed] no Gemini API key (user has none, env has none)');
   }
   return key;
 }

@@ -61,6 +61,9 @@ export default function ReviewTheater() {
               <Link to="/reviews" className="text-slate-400 hover:text-slate-100">
                 Reviews
               </Link>
+              <Link to="/settings" className="text-slate-400 hover:text-slate-100">
+                Settings
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-3">

@@ -14,6 +14,7 @@ import { configurePassport } from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
 import reposRoutes from './routes/repos.routes.js';
 import reviewsRoutes from './routes/reviews.routes.js';
+import settingsRoutes from './routes/settings.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { attachReviewSocket } from './sockets/reviewSocket.js';
 
@@ -78,6 +79,7 @@ app.get('/api/health', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/api/repos', reposRoutes);
 app.use('/api/reviews', reviewsRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // --- Error handler (must be last) ---
 app.use(errorHandler);
