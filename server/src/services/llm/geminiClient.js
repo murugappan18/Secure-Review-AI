@@ -1,6 +1,23 @@
 import { GoogleGenerativeAI, FunctionCallingMode } from '@google/generative-ai';
 import { synthToolCallId, parseArgs } from './types.js';
 
+// Proactive throttling. Gemini Flash free tier is 15 RPM — one request every
+// 4 seconds. We enforce a 4.5s minimum gap between requests so we NEVER trip
+// the limit, instead of paying the much larger cost of a 60s 429 retry.
+// All Gemini requests funnel through this gate.
+let lastRequestAt = 0;
+const MIN_REQUEST_INTERVAL_MS = 4500;
+
+async function throttleGemini() {
+  const now = Date.now();
+  const elapsed = now - lastRequestAt;
+  if (elapsed < MIN_REQUEST_INTERVAL_MS) {
+    const wait = MIN_REQUEST_INTERVAL_MS - elapsed;
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  lastRequestAt = Date.now();
+}
+
 // Convert our normalized message list into Gemini's contents[] format.
 // Gemini uses 'user' and 'model' roles; tool results come back as
 // 'function' role parts; the system message is set separately.
@@ -96,6 +113,7 @@ export async function chat({ messages, tools, model }) {
       : undefined,
   });
 
+  await throttleGemini();
   const result = await generativeModel.generateContent({ contents });
   const response = result.response;
 
