@@ -14,3 +14,89 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Theme system
+   The app is dark-themed by default. `useTheme` hook adds a `dark`
+   class to <html>. When the user toggles to light mode, the class is
+   removed, and the overrides below kick in to invert the slate palette.
+   No component refactor needed — class names stay the same.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Dark theme (default — class added by hook on boot). Body just inherits
+   the slate-950 background that components apply, so nothing to do here. */
+
+/* Light theme overrides — active when html does NOT have `dark` class. */
+html:not(.dark) body {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+/* Backgrounds */
+html:not(.dark) .bg-slate-950 { background-color: #ffffff; }
+html:not(.dark) .bg-slate-950\/80 { background-color: rgb(255 255 255 / 0.85); }
+html:not(.dark) .bg-slate-900 { background-color: #f8fafc; }
+html:not(.dark) .bg-slate-900\/40 { background-color: rgb(241 245 249 / 0.6); }
+html:not(.dark) .bg-slate-900\/50 { background-color: rgb(241 245 249 / 0.7); }
+html:not(.dark) .bg-slate-900\/60 { background-color: rgb(241 245 249 / 0.8); }
+html:not(.dark) .bg-slate-800 { background-color: #e2e8f0; }
+html:not(.dark) .bg-slate-800\/30 { background-color: rgb(226 232 240 / 0.4); }
+html:not(.dark) .bg-slate-800\/50 { background-color: rgb(226 232 240 / 0.6); }
+html:not(.dark) .bg-slate-800\/60 { background-color: rgb(226 232 240 / 0.7); }
+html:not(.dark) .bg-slate-800\/80 { background-color: rgb(226 232 240 / 0.85); }
+
+/* Text colors */
+html:not(.dark) .text-slate-100 { color: #0f172a; }
+html:not(.dark) .text-slate-200 { color: #1e293b; }
+html:not(.dark) .text-slate-300 { color: #334155; }
+html:not(.dark) .text-slate-400 { color: #475569; }
+/* slate-500 stays the same — mid-grey works in both themes */
+html:not(.dark) .text-slate-600 { color: #64748b; }
+
+/* Hover text colors */
+html:not(.dark) .hover\:text-slate-100:hover { color: #0f172a; }
+html:not(.dark) .hover\:text-slate-200:hover { color: #1e293b; }
+html:not(.dark) .hover\:text-slate-300:hover { color: #334155; }
+html:not(.dark) .hover\:text-white:hover { color: #0f172a; }
+
+/* Borders */
+html:not(.dark) .border-slate-700 { border-color: #cbd5e1; }
+html:not(.dark) .border-slate-800 { border-color: #e2e8f0; }
+
+html:not(.dark) .hover\:border-slate-500:hover { border-color: #94a3b8; }
+html:not(.dark) .hover\:border-slate-700:hover { border-color: #cbd5e1; }
+
+/* Code blocks / mono — these are dark by design even in light mode (like
+   GitHub's syntax highlighting). Force the dark background back. */
+html:not(.dark) .bg-slate-950\/50,
+html:not(.dark) .bg-slate-950\/60,
+html:not(.dark) pre.bg-slate-950 {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Tinted brand backgrounds keep their identity in both themes
+   (emerald/amber/red/violet) — only the slate scaffolding flips. */
+
+/* Inputs */
+html:not(.dark) input[type='text'],
+html:not(.dark) input[type='password'],
+html:not(.dark) select {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+html:not(.dark) input::placeholder {
+  color: #94a3b8;
+}
+
+/* Buttons — light variant for the "primary" white-on-dark button */
+html:not(.dark) .bg-slate-100 {
+  background-color: #0f172a;
+}
+html:not(.dark) .text-slate-900 {
+  color: #f8fafc;
+}
+html:not(.dark) .hover\:bg-white:hover {
+  background-color: #1e293b;
+}

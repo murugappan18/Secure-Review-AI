@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 import Footer from '../components/Footer.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -87,10 +88,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h1 className="text-lg font-semibold">SecureReview AI</h1>
-            <nav className="flex gap-4 text-sm">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+            <h1 className="text-base sm:text-lg font-semibold whitespace-nowrap">SecureReview AI</h1>
+            <nav className="flex gap-3 sm:gap-4 text-xs sm:text-sm">
               <Link to="/dashboard" className="text-slate-100 font-medium">
                 Dashboard
               </Link>
@@ -102,18 +103,19 @@ export default function Dashboard() {
               </Link>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
+            <ThemeToggle />
             {user?.avatarUrl && (
               <img
                 src={user.avatarUrl}
                 alt=""
-                className="w-8 h-8 rounded-full border border-slate-700"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-slate-700"
               />
             )}
-            <span className="text-sm text-slate-300">{user?.username}</span>
+            <span className="text-sm text-slate-300 hidden md:inline">{user?.username}</span>
             <button
               onClick={handleLogout}
-              className="text-xs text-slate-400 hover:text-slate-200 ml-2"
+              className="text-xs text-slate-400 hover:text-slate-200 ml-1 sm:ml-2 whitespace-nowrap"
             >
               Sign out
             </button>
@@ -423,7 +425,7 @@ function IndexAction({ repo, onIndex, isStarting, canIndex = true }) {
       onClick={onIndex}
       disabled={isStarting || !canIndex}
       title={disabledTitle}
-      className="text-xs text-slate-200 px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 hover:bg-slate-800/50 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+      className="text-xs text-slate-200 px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 hover:bg-slate-200 dark:bg-slate-800/50 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
     >
       {isStarting ? 'Starting...' : 'Index'}
     </button>

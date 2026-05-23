@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
 import { backendUrl } from '../lib/api.js';
 import Footer from '../components/Footer.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -17,6 +18,9 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <main className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-lg text-center">
         <h1 className="text-4xl font-semibold mb-3">SecureReview AI</h1>
