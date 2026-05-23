@@ -7,13 +7,16 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node --use-system-ca src/index.js"
+    "start": "node --use-system-ca src/index.js",
+    "seed": "node --use-system-ca scripts/seedSecurityKB.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
