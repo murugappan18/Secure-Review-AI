@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -10,9 +9,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { useAuthStore } from '../store/authStore.js';
 import Footer from '../components/Footer.jsx';
-import ThemeToggle from '../components/ThemeToggle.jsx';
+import AppHeader from '../components/AppHeader.jsx';
 
 const PROVIDER_INFO = {
   gemini: {
@@ -41,10 +39,6 @@ const PROVIDER_INFO = {
 };
 
 export default function Settings() {
-  const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
-
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['settings'],
     queryFn: async () => {
@@ -53,48 +47,9 @@ export default function Settings() {
     },
   });
 
-  function handleLogout() {
-    logout();
-    navigate('/', { replace: true });
-  }
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <header className="border-b border-slate-800">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3 sm:gap-6 min-w-0">
-            <h1 className="text-base sm:text-lg font-semibold whitespace-nowrap">SecureReview AI</h1>
-            <nav className="flex gap-3 sm:gap-4 text-xs sm:text-sm">
-              <Link to="/dashboard" className="text-slate-400 hover:text-slate-100">
-                Dashboard
-              </Link>
-              <Link to="/reviews" className="text-slate-400 hover:text-slate-100">
-                Reviews
-              </Link>
-              <Link to="/settings" className="text-slate-100 font-medium">
-                Settings
-              </Link>
-            </nav>
-          </div>
-          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
-            <ThemeToggle />
-            {user?.avatarUrl && (
-              <img
-                src={user.avatarUrl}
-                alt=""
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-slate-700"
-              />
-            )}
-            <span className="text-sm text-slate-300 hidden md:inline">{user?.username}</span>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-slate-400 hover:text-slate-200 ml-1 sm:ml-2 whitespace-nowrap"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
+      <AppHeader active="settings" />
 
       <main className="max-w-3xl mx-auto px-6 py-8 space-y-6 flex-1 w-full">
         <div>
