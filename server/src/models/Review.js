@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { z } from 'zod';
 
-export const REVIEW_STATUSES = ['queued', 'running', 'complete', 'failed'];
+export const REVIEW_STATUSES = ['queued', 'running', 'complete', 'failed', 'stopped'];
 export const SEVERITY_LEVELS = ['critical', 'high', 'medium', 'low', 'info'];
 export const RISK_LEVELS = ['critical', 'high', 'medium', 'low'];
 

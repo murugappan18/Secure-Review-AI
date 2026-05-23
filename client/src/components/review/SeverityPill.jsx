@@ -49,6 +49,7 @@ export function StatusPill({ status }) {
     running: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
     complete: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
     failed: 'bg-red-500/15 text-red-300 border-red-500/40',
+    stopped: 'bg-slate-700/40 text-slate-300 border-slate-600',
   };
   const tone = tones[status] ?? tones.queued;
   return (

@@ -1,5 +1,6 @@
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { StopCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 import { useReviewStream } from '../hooks/useReviewStream.js';
@@ -20,6 +21,7 @@ export default function ReviewTheater() {
   const logout = useAuthStore((s) => s.logout);
   const [focusedFinding, setFocusedFinding] = useState(null);
 
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['review', id],
     queryFn: async () => {
@@ -33,6 +35,19 @@ export default function ReviewTheater() {
   const isLive = data?.status === 'running' || data?.status === 'queued';
   const { connected: streamConnected, lastEventAt } = useReviewStream(id, {
     enabled: isLive,
+  });
+
+  // Stop button — only meaningful while the review is queued/running.
+  const stopMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post(`/api/reviews/${id}/stop`);
+      return res.data.review;
+    },
+    onSuccess: (review) => {
+      // Optimistically reflect 'stopped' immediately; the socket event
+      // will arrive a moment later and reconcile the rest.
+      queryClient.setQueryData(['review', id], (old) => ({ ...old, ...review }));
+    },
   });
 
   function handleLogout() {
@@ -126,7 +141,17 @@ export default function ReviewTheater() {
                 )}
               </div>
 
-              <div className="text-right text-xs text-slate-500 shrink-0 space-y-1">
+              <div className="text-right text-xs text-slate-500 shrink-0 space-y-1.5">
+                {isLive && (
+                  <button
+                    onClick={() => stopMutation.mutate()}
+                    disabled={stopMutation.isPending}
+                    className="inline-flex items-center gap-1.5 text-xs text-red-300 px-3 py-1.5 rounded border border-red-500/40 hover:border-red-500/60 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  >
+                    <StopCircle className="w-3.5 h-3.5" />
+                    {stopMutation.isPending ? 'Stopping...' : 'Stop review'}
+                  </button>
+                )}
                 <div className="flex justify-end gap-1 flex-wrap">
                   {order
                     .filter((sev) => bySeverity[sev])

@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, FunctionCallingMode } from '@google/generative-ai';
 import { synthToolCallId, parseArgs } from './types.js';
 import { getUserApiKey, getUserModel } from '../../utils/userContext.js';
+import { getCurrentAbortSignal } from '../../utils/abortContext.js';
 
 // Proactive throttling. Gemini Flash free tier is 15 RPM — one request every
 // 4 seconds. We enforce a 4.5s minimum gap between requests so we NEVER trip
@@ -15,6 +16,27 @@ async function throttleGemini() {
   if (elapsed < MIN_REQUEST_INTERVAL_MS) {
     const wait = MIN_REQUEST_INTERVAL_MS - elapsed;
     await new Promise((r) => setTimeout(r, wait));
+  }
+  lastRequestAt = Date.now();
+}
+
+// Same as throttleGemini, but interruptible by an AbortSignal. Used by
+// the agent loop so the Stop button doesn't have to wait up to 4.5s for
+// the in-flight throttle sleep to finish.
+async function throttleGeminiAbortable(signal) {
+  if (!signal) return throttleGemini();
+  const now = Date.now();
+  const elapsed = now - lastRequestAt;
+  if (elapsed < MIN_REQUEST_INTERVAL_MS) {
+    const wait = MIN_REQUEST_INTERVAL_MS - elapsed;
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, wait);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new Error('aborted_during_throttle'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
   }
   lastRequestAt = Date.now();
 }
@@ -120,8 +142,31 @@ export async function chat({ messages, tools, model }) {
       : undefined,
   });
 
-  await throttleGemini();
-  const result = await generativeModel.generateContent({ contents });
+  const signal = getCurrentAbortSignal();
+  await throttleGeminiAbortable(signal);
+  if (signal?.aborted) {
+    const err = new Error('aborted_before_llm_call');
+    err.code = 'REVIEW_STOPPED';
+    throw err;
+  }
+  // @google/generative-ai v0.24+ accepts a signal on SingleRequestOptions —
+  // this lets us interrupt an in-flight generateContent call, not just the
+  // gap between calls.
+  let result;
+  try {
+    result = await generativeModel.generateContent(
+      { contents },
+      signal ? { signal } : undefined
+    );
+  } catch (err) {
+    // If the SDK surfaced an abort error, normalize it to our code.
+    if (signal?.aborted || err.name === 'AbortError') {
+      const stop = new Error('aborted_during_llm_call');
+      stop.code = 'REVIEW_STOPPED';
+      throw stop;
+    }
+    throw err;
+  }
   const response = result.response;
 
   // Walk the candidate parts directly so we can capture the per-tool-call

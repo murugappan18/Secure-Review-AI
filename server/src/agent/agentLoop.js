@@ -43,10 +43,32 @@ export function parsePrUrl(url) {
   return { owner: m[1], repo: m[2].replace(/\.git$/, ''), prNumber: Number(m[3]) };
 }
 
+// Convenience: AbortError so the outer catch can distinguish "user stopped
+// the review" from "agent loop genuinely failed". Status flips to 'stopped'
+// vs 'failed' accordingly.
+export class ReviewStoppedError extends Error {
+  constructor(message = 'Review stopped by user') {
+    super(message);
+    this.name = 'ReviewStoppedError';
+    this.code = 'REVIEW_STOPPED';
+  }
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    throw new ReviewStoppedError();
+  }
+}
+
 // ---------------------------------------------------------------------
 // runReview — top-level orchestrator
 // ---------------------------------------------------------------------
-export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
+export async function runReview({
+  reviewId,
+  accessToken,
+  emitter = () => {},
+  signal, // optional AbortSignal — when aborted, the loop short-circuits between phases.
+}) {
   const startedAt = new Date();
   const review = await Review.findById(reviewId);
   if (!review) throw new Error(`review not found: ${reviewId}`);
@@ -72,6 +94,7 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
 
   const runOpts = {
     onEvent: (ev) => emitter({ ...ev, reviewId: String(reviewId) }),
+    signal,
   };
 
   // Phase / tool / token accumulators for the Review doc.
@@ -188,6 +211,11 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
           console.warn(`[agent] PR metadata prefetch failed: ${err.message}`);
         }
 
+        // The PR was already validated by the route before this Review doc
+        // was created. If files prefetch fails NOW, it means the PR was
+        // deleted, closed-as-private, or GitHub is having an outage — in
+        // any case, the agent can't produce a meaningful review without
+        // the patches, so fail loud rather than running on empty.
         try {
           ctx.prFiles = await getPullRequestFiles(
             ctx.owner,
@@ -195,22 +223,37 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
             ctx.prNumber,
             accessToken
           );
+          if (!ctx.prFiles || ctx.prFiles.length === 0) {
+            throw new Error('PR has no file changes (empty patch)');
+          }
           console.log(`[agent] prefetched ${ctx.prFiles.length} PR files`);
         } catch (err) {
-          console.warn(`[agent] PR files prefetch failed: ${err.message}`);
-          ctx.prFiles = [];
+          const status = err.status ?? err.response?.status;
+          const reason =
+            status === 404
+              ? 'PR not found anymore — was it deleted between submission and review?'
+              : status === 403
+                ? "GitHub denied access to the PR's files (token scopes may have changed)"
+                : `Failed to fetch PR files: ${err.message?.slice(0, 200) ?? 'unknown'}`;
+          const fatal = new Error(reason);
+          fatal.status = status;
+          throw fatal; // Propagates to outer catch → review.status='failed'
         }
 
-        // --- The 5 phases ---
+        // --- The 5 phases --- (abort check between each)
+        throwIfAborted(signal);
         const p1 = await runPhase('understand_diff', understandDiff);
         ctx.diffSummary = p1.parsed;
 
+        throwIfAborted(signal);
         const p2 = await runPhase('gather_context', gatherContext);
         ctx.gatheredContext = p2.parsed;
 
+        throwIfAborted(signal);
         const p3 = await runPhase('reason_exploitability', reasonExploitability);
         ctx.candidatesPhase = p3.parsed;
 
+        throwIfAborted(signal);
         // Phase 4 is REFINEMENT. Two failure modes:
         //   (a) it THROWS — quota exhausted, network died, etc.
         //   (b) it returns null or empty output — LLM produced no parseable
@@ -248,6 +291,7 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
           };
         }
 
+        throwIfAborted(signal);
         const p5 = await runPhase('generate_review', generateReview);
 
         // Validate the final-phase output, salvage what we can on partial fail.
@@ -296,7 +340,11 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
 
     return review;
   } catch (err) {
-    review.status = 'failed';
+    // Distinguish "user stopped this" from a real failure. status='stopped'
+    // surfaces in the UI as a neutral gray pill, not the alarming red of a
+    // genuine error.
+    const isStopped = err instanceof ReviewStoppedError || err.code === 'REVIEW_STOPPED';
+    review.status = isStopped ? 'stopped' : 'failed';
     review.statusMessage = (err.message ?? String(err)).slice(0, 500);
     review.completedAt = new Date();
     review.durationMs = review.completedAt - startedAt;
@@ -306,11 +354,12 @@ export async function runReview({ reviewId, accessToken, emitter = () => {} }) {
     await review.save();
 
     emitter({
-      type: 'review_failed',
+      type: isStopped ? 'review_stopped' : 'review_failed',
       reviewId: String(reviewId),
       error: err.message,
     });
-    throw err;
+    if (!isStopped) throw err; // Stopped is a clean exit; failure should still throw
+    return review;
   }
 }
 

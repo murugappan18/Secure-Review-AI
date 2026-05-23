@@ -34,7 +34,11 @@ export function useReviewStream(reviewId, { enabled = true } = {}) {
       });
       // On terminal events, the server has persisted the final findings
       // array and summary; refetch to pull them in.
-      if (event.type === 'review_complete' || event.type === 'review_failed') {
+      if (
+        event.type === 'review_complete' ||
+        event.type === 'review_failed' ||
+        event.type === 'review_stopped'
+      ) {
         queryClient.invalidateQueries({ queryKey: ['review', reviewId] });
       }
     }
@@ -172,6 +176,14 @@ function applyEvent(review, event) {
         ...review,
         status: 'failed',
         statusMessage: event.error,
+        completedAt: now,
+      };
+
+    case 'review_stopped':
+      return {
+        ...review,
+        status: 'stopped',
+        statusMessage: event.error ?? 'Stopped by user',
         completedAt: now,
       };
 

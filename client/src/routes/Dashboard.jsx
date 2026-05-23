@@ -47,7 +47,11 @@ export default function Dashboard() {
       navigate(`/reviews/${review._id}`);
     },
     onError: (err) => {
-      setPrError(err.response?.data?.error || err.message);
+      // Server returns { error: 'pr_not_found', message: '<friendly>' }.
+      // Prefer the friendly message; fall back to the error code, then the
+      // network-level message.
+      const data = err.response?.data;
+      setPrError(data?.message ?? data?.error ?? err.message);
     },
   });
 
