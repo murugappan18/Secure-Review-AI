@@ -34,6 +34,6 @@ Thumbs.db
 *.swo
 *~
 
-# Local cache for @xenova/transformers models
+# Local model / transformer caches (if any)
 .cache/
 *.onnx
