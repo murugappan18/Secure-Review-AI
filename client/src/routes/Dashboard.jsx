@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
 
@@ -134,9 +134,12 @@ export default function Dashboard() {
           {prError && (
             <p className="text-red-400 font-mono text-xs mt-2">{prError}</p>
           )}
-          <p className="text-[11px] text-slate-500 mt-3">
-            Tip: index the repo first (below) for richer cross-file analysis.
-          </p>
+          <RepoIndexHint
+            prUrl={prUrl}
+            repos={data}
+            onIndex={(repo) => indexMutation.mutate(repo)}
+            isStarting={indexMutation.isPending}
+          />
         </section>
 
         {/* --- Repositories --- */}
@@ -202,6 +205,94 @@ export default function Dashboard() {
 }
 
 // --- presentational pieces ---------------------------------------------
+
+// Parse a GitHub PR URL into { owner, name, number } on the client side
+// (same regex used for validation). Returns null if it doesn't match.
+function parsePrUrlClient(url) {
+  const m = String(url ?? '').match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i
+  );
+  if (!m) return null;
+  return { owner: m[1], name: m[2].replace(/\.git$/, ''), number: Number(m[3]) };
+}
+
+// Show the user whether the repo behind their PR URL is indexed, indexing,
+// or not yet indexed. Offers a one-click Index button for the not-indexed
+// case. Reviews still work without indexing, but with weaker cross-file
+// context — this hint is informational, not blocking.
+function RepoIndexHint({ prUrl, repos, onIndex, isStarting }) {
+  const parsed = parsePrUrlClient(prUrl);
+  if (!prUrl.trim()) {
+    return (
+      <p className="text-[11px] text-slate-500 mt-3">
+        Tip: indexing the repo first gives the agent cross-file context.
+      </p>
+    );
+  }
+  if (!parsed) return null; // Don't add noise while the URL is partial
+
+  const fullName = `${parsed.owner}/${parsed.name}`;
+  const repo = repos?.find((r) => r.fullName === fullName);
+
+  if (!repo) {
+    // PR for a repo not in this user's GitHub list (third-party, fork, etc.)
+    // We can't show its index status; review will run without codebase context.
+    return (
+      <p className="text-[11px] text-slate-500 mt-3 flex items-center gap-1.5">
+        <AlertCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+        <span>
+          <code className="font-mono">{fullName}</code> isn&apos;t in your repo
+          list — the review will run against the diff only.
+        </span>
+      </p>
+    );
+  }
+
+  const status = repo.indexStatus ?? 'not_indexed';
+
+  if (status === 'ready') {
+    return (
+      <p className="text-[11px] mt-3 flex items-center gap-1.5 text-emerald-400">
+        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+        <span>
+          <code className="font-mono text-slate-300">{fullName}</code> is indexed
+          — {repo.chunkCount} chunks available for cross-file analysis.
+        </span>
+      </p>
+    );
+  }
+  if (status === 'indexing' || status === 'pending') {
+    return (
+      <p className="text-[11px] mt-3 flex items-center gap-1.5 text-amber-300">
+        <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+        <span>
+          Indexing <code className="font-mono text-slate-300">{fullName}</code>
+          {repo.indexProgress != null && ` (${repo.indexProgress}%)`} — submitting
+          now will use what&apos;s indexed so far.
+        </span>
+      </p>
+    );
+  }
+  // 'not_indexed' or 'failed'
+  return (
+    <div className="text-[11px] mt-3 flex items-center gap-2 flex-wrap">
+      <AlertCircle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+      <span className="text-slate-400">
+        <code className="font-mono text-slate-300">{fullName}</code> isn&apos;t
+        indexed{status === 'failed' && ' (previous attempt failed)'} —
+      </span>
+      <button
+        type="button"
+        onClick={() => onIndex(repo)}
+        disabled={isStarting}
+        className="text-[11px] text-amber-200 hover:text-amber-100 underline disabled:opacity-50"
+      >
+        {isStarting ? 'starting...' : 'index now'}
+      </button>
+      <span className="text-slate-500">or submit anyway for a diff-only review.</span>
+    </div>
+  );
+}
 
 function DemoModeBanner() {
   // Cheap settings fetch — TanStack caches across pages so this is a no-op

@@ -355,20 +355,31 @@ function ProviderCard({ provider, apiKey, providerConfig, availableModels }) {
             ))}
           </select>
         </div>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={providerConfig.enabled}
-            onChange={(e) =>
-              updateProvider.mutate({ enabled: e.target.checked })
-            }
-            disabled={updateProvider.isPending}
-            className="w-4 h-4 accent-emerald-500"
-          />
-          <span className="text-xs text-slate-300">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">
             {providerConfig.enabled ? 'Enabled' : 'Disabled'}
           </span>
-        </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={providerConfig.enabled}
+            onClick={() =>
+              updateProvider.mutate({ enabled: !providerConfig.enabled })
+            }
+            disabled={updateProvider.isPending}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+              providerConfig.enabled
+                ? 'bg-emerald-500/90 hover:bg-emerald-500'
+                : 'bg-slate-700 hover:bg-slate-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transform transition-transform ${
+                providerConfig.enabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
       </div>
     </article>
   );
