@@ -26,6 +26,14 @@ export function getCurrentUserContext() {
   return als.getStore() ?? null;
 }
 
+// True when we're inside an authenticated request (set by requireAuth).
+// Dev scripts run WITHOUT a user context — we use this distinction so the
+// LLM clients can fall back to env keys for scripts, while still strictly
+// requiring user-supplied keys in HTTP requests.
+export function hasUserContext() {
+  return als.getStore() != null;
+}
+
 // ---------- per-call helpers (the LLM clients use these) ----------
 
 export function getUserApiKey(provider) {

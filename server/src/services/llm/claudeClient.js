@@ -1,5 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getUserApiKey, getUserModel } from '../../utils/userContext.js';
+import {
+  getUserApiKey,
+  getUserModel,
+  hasUserContext,
+} from '../../utils/userContext.js';
 
 // Claude's messages API takes a separate `system` parameter (not a message)
 // and represents tool use as `tool_use` / `tool_result` content blocks
@@ -70,15 +74,21 @@ function toClaudeTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  // Pure BYOK — no env fallback.
-  const apiKey = getUserApiKey('claude');
+  // BYOK in HTTP requests; env fallback for dev scripts only.
+  const apiKey = hasUserContext()
+    ? getUserApiKey('claude')
+    : process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    const err = new Error('[claude] no Claude API key configured for this user');
+    const err = new Error('[claude] no Anthropic API key available');
     err.code = 'NO_USER_API_KEY';
     throw err;
   }
 
-  const modelName = model || getUserModel('claude') || 'claude-sonnet-4-5';
+  const modelName =
+    model ||
+    (hasUserContext() ? getUserModel('claude') : null) ||
+    process.env.CLAUDE_MODEL ||
+    'claude-sonnet-4-5';
   const client = new Anthropic({ apiKey });
 
   const response = await client.messages.create({

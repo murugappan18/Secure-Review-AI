@@ -1,6 +1,10 @@
 import { GoogleGenerativeAI, FunctionCallingMode } from '@google/generative-ai';
 import { synthToolCallId, parseArgs } from './types.js';
-import { getUserApiKey, getUserModel } from '../../utils/userContext.js';
+import {
+  getUserApiKey,
+  getUserModel,
+  hasUserContext,
+} from '../../utils/userContext.js';
 import { getCurrentAbortSignal } from '../../utils/abortContext.js';
 
 // Proactive throttling. Gemini Flash free tier is 15 RPM — one request every
@@ -116,18 +120,28 @@ function toGeminiTools(tools) {
 }
 
 export async function chat({ messages, tools, model }) {
-  // Pure BYOK — no env fallback. Routes pre-flight users, so reaching this
-  // path without a key is a code bug (or a dev script that should set its
-  // own context).
-  const apiKey = getUserApiKey('gemini');
+  // BYOK in HTTP requests, env fallback ONLY for dev scripts (no user ctx).
+  // The route layer enforces BYOK for actual users, so reaching here without
+  // a user context means we're inside a script (testAgentLoop, seed, etc.).
+  const apiKey = hasUserContext()
+    ? getUserApiKey('gemini')
+    : process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    const err = new Error('[gemini] no Gemini API key configured for this user');
+    const err = new Error(
+      hasUserContext()
+        ? '[gemini] no Gemini API key configured for this user'
+        : '[gemini] no GEMINI_API_KEY env var (dev script context)'
+    );
     err.code = 'NO_USER_API_KEY';
     throw err;
   }
 
-  // Model: explicit arg > user preference > sensible default.
-  const modelName = model || getUserModel('gemini') || 'gemini-3.1-flash-lite';
+  // Model: explicit arg > user preference > env (script default) > hardcoded.
+  const modelName =
+    model ||
+    (hasUserContext() ? getUserModel('gemini') : null) ||
+    process.env.GEMINI_MODEL ||
+    'gemini-3.1-flash-lite';
   const genai = new GoogleGenerativeAI(apiKey);
   const { contents, systemInstruction } = toGeminiContents(messages);
 

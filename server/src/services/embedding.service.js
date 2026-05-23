@@ -1,4 +1,4 @@
-import { getUserApiKey } from '../utils/userContext.js';
+import { getUserApiKey, hasUserContext } from '../utils/userContext.js';
 
 // Embeddings via Google's gemini-embedding-001 (Matryoshka — full 3072 dims,
 // truncated to 768 by passing outputDimensionality).
@@ -21,15 +21,21 @@ const MAX_BATCH = 100; // Google's per-request limit for batchEmbedContents
 const MAX_INPUT_CHARS = 6000; // ~1500 tokens; safe under 2048 limit
 
 function getApiKey() {
-  // Pure BYOK — embeddings use the user's Gemini key (the only provider
-  // we use for embeddings). No admin fallback.
-  const userKey = getUserApiKey('gemini');
-  if (!userKey) {
-    const err = new Error('[embed] no Gemini API key configured for this user');
+  // BYOK in HTTP requests, env fallback ONLY when called from a dev script
+  // outside any user context (e.g. seedSecurityKB.js).
+  const key = hasUserContext()
+    ? getUserApiKey('gemini')
+    : process.env.GEMINI_API_KEY;
+  if (!key) {
+    const err = new Error(
+      hasUserContext()
+        ? '[embed] no Gemini API key configured for this user'
+        : '[embed] no GEMINI_API_KEY env var (dev script context)'
+    );
     err.code = 'NO_USER_API_KEY';
     throw err;
   }
-  return userKey;
+  return key;
 }
 
 function prep(text) {
