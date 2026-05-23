@@ -2,6 +2,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../store/authStore.js';
+import { useReviewStream } from '../hooks/useReviewStream.js';
 import SeverityPill, {
   ProviderPill,
   StatusPill,
@@ -25,11 +26,13 @@ export default function ReviewTheater() {
       const res = await api.get(`/api/reviews/${id}`);
       return res.data.review;
     },
-    // While running, poll for live updates. Phase 10 will switch to sockets.
-    refetchInterval: (q) => {
-      const review = q.state.data;
-      return review?.status === 'running' || review?.status === 'queued' ? 2000 : false;
-    },
+  });
+
+  // Subscribe to live events. The hook mutates the TanStack Query cache
+  // directly so the UI above re-renders on each event without polling.
+  const isLive = data?.status === 'running' || data?.status === 'queued';
+  const { connected: streamConnected, lastEventAt } = useReviewStream(id, {
+    enabled: isLive,
   });
 
   function handleLogout() {
@@ -106,6 +109,7 @@ export default function ReviewTheater() {
                     {data.prOwner}/{data.prRepo}#{data.prNumber}
                   </a>
                   <StatusPill status={data.status} />
+                  {isLive && streamConnected && <LivePulse />}
                   <ProviderPill provider={data.modelUsed} />
                   {data.riskAssessment && (
                     <SeverityPill severity={data.riskAssessment} size="xs" />
@@ -170,5 +174,19 @@ export default function ReviewTheater() {
         </>
       )}
     </div>
+  );
+}
+
+// Pulsing "LIVE" dot — only shown while the socket is connected and the
+// review is actively running.
+function LivePulse() {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-300 text-[10px] uppercase tracking-wider font-medium">
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+      </span>
+      live
+    </span>
   );
 }

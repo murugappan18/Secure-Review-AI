@@ -20,6 +20,7 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.15.1",
     "react-syntax-highlighter": "^16.1.1",
+    "socket.io-client": "^4.8.3",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

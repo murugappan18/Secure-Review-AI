@@ -7,11 +7,15 @@ import mongoose from 'mongoose';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import passport from 'passport';
+import jwt from 'jsonwebtoken';
+import { createServer } from 'node:http';
+import { Server as IOServer } from 'socket.io';
 import { configurePassport } from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
 import reposRoutes from './routes/repos.routes.js';
 import reviewsRoutes from './routes/reviews.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { attachReviewSocket } from './sockets/reviewSocket.js';
 
 // --- Required env guards ---
 const REQUIRED_ENV = [
@@ -78,6 +82,35 @@ app.use('/api/reviews', reviewsRoutes);
 // --- Error handler (must be last) ---
 app.use(errorHandler);
 
+// --- HTTP server + Socket.IO ---
+//
+// Wrap Express in node:http so Socket.IO can attach. The frontend connects
+// to the same origin as the API; CORS for sockets is handled separately
+// because the socket.io engine does its own preflight.
+const httpServer = createServer(app);
+const io = new IOServer(httpServer, {
+  cors: {
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    credentials: true,
+  },
+});
+
+// JWT handshake: every socket must present a valid JWT in handshake.auth.token.
+// We attach userId to socket.data so handlers can do owner checks.
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error('no_auth_token'));
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    socket.data.userId = payload.sub;
+    next();
+  } catch (err) {
+    next(new Error(`invalid_token: ${err.message}`));
+  }
+});
+
+attachReviewSocket(io);
+
 // --- Boot ---
 const PORT = Number(process.env.PORT) || 5000;
 
@@ -92,14 +125,16 @@ async function start() {
     process.exit(1);
   }
 
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`[server] listening on http://localhost:${PORT}`);
+    console.log(`[socket.io] attached`);
   });
 }
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n[server] SIGINT received, closing...');
+  io.close();
   await mongoose.connection.close();
   process.exit(0);
 });

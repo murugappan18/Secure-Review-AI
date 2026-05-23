@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { parsePrUrl, runReview } from '../agent/agentLoop.js';
+import { reviewEventBus } from '../sockets/eventBus.js';
 import Review from '../models/Review.js';
 
 const router = Router();
@@ -49,6 +50,9 @@ router.post('/', requireAuth, async (req, res, next) => {
           ) {
             console.log(`[review:${review._id}] ${ev.type}`, ev.phase ?? '');
           }
+          // Publish to the in-process bus so Socket.IO subscribers receive
+          // live updates without polling. The bus is reviewId-scoped.
+          reviewEventBus.publish(String(review._id), ev);
         },
       }).catch((err) => {
         console.error(`[review:${review._id}] runReview crashed:`, err);
