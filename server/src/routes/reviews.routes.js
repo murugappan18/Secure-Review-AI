@@ -4,7 +4,16 @@ import { parsePrUrl, runReview } from '../agent/agentLoop.js';
 import { reviewEventBus } from '../sockets/eventBus.js';
 import { runWithUserContext } from '../utils/userContext.js';
 import { runWithAbortContext } from '../utils/abortContext.js';
-import { getPullRequest } from '../services/github.service.js';
+import {
+  getPullRequest,
+  getPullRequestFiles,
+  postIssueComment,
+  createPullRequestReview,
+} from '../services/github.service.js';
+import {
+  renderReviewMarkdown,
+  renderReviewForPRReview,
+} from '../utils/reviewMarkdown.js';
 import Review from '../models/Review.js';
 
 const router = Router();
@@ -203,6 +212,128 @@ router.post('/:id/stop', requireAuth, async (req, res, next) => {
     });
 
     res.json({ review });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
+// POST /api/reviews/:id/comment — post the review back to the source PR.
+// Body: { style: 'issue' | 'review' } (default 'issue').
+//   - 'issue':  single markdown comment on the PR conversation tab
+//   - 'review': a GitHub PR Review with inline line-level comments where
+//               the finding line falls inside a PR hunk; remaining findings
+//               summarized in the review body.
+// -----------------------------------------------------------------------
+router.post('/:id/comment', requireAuth, async (req, res, next) => {
+  try {
+    const review = await Review.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+    if (!review) return res.status(404).json({ error: 'review_not_found' });
+
+    if (review.status !== 'complete') {
+      return res.status(400).json({
+        error: 'review_not_complete',
+        message: 'Only completed reviews can be posted to GitHub.',
+      });
+    }
+
+    const style = req.body?.style === 'review' ? 'review' : 'issue';
+    const accessToken = req.user.getAccessToken();
+
+    if (style === 'issue') {
+      const body = renderReviewMarkdown(review);
+      const result = await postIssueComment(
+        review.prOwner,
+        review.prRepo,
+        review.prNumber,
+        body,
+        accessToken
+      );
+      return res.json({
+        style,
+        comment: result,
+        inlineCount: 0,
+        findingsCount: review.findings.length,
+      });
+    }
+
+    // style === 'review' — need PR files to know which findings can be
+    // anchored inline.
+    let prFiles = [];
+    try {
+      prFiles = await getPullRequestFiles(
+        review.prOwner,
+        review.prRepo,
+        review.prNumber,
+        accessToken
+      );
+    } catch (err) {
+      console.warn(
+        `[reviews] /comment: failed to refetch PR files (${err.message}); ` +
+          'falling back to body-only review.'
+      );
+    }
+
+    const { body, comments, inlineCount, skipped } = renderReviewForPRReview(
+      review,
+      prFiles
+    );
+
+    try {
+      const result = await createPullRequestReview(
+        review.prOwner,
+        review.prRepo,
+        review.prNumber,
+        {
+          body,
+          comments,
+          commitId: review.headSha ?? undefined,
+          event: 'COMMENT', // never auto-approve / request changes
+        },
+        accessToken
+      );
+      return res.json({
+        style,
+        comment: result,
+        inlineCount,
+        skippedCount: skipped.length,
+        findingsCount: review.findings.length,
+      });
+    } catch (err) {
+      const status = err.status ?? err.response?.status;
+      const ghMsg =
+        err.response?.data?.message ??
+        err.response?.data?.errors?.[0]?.message ??
+        err.message;
+      console.warn(
+        `[reviews] createPullRequestReview failed (status=${status}): ${ghMsg}`
+      );
+      // Common failure: stale commit SHA (force-push after review started)
+      // or all inline comments rejected. Fall back to a plain issue comment
+      // so the user still gets the review on the PR.
+      if (status === 422 || status === 404) {
+        const fallbackBody = renderReviewMarkdown(review);
+        const fb = await postIssueComment(
+          review.prOwner,
+          review.prRepo,
+          review.prNumber,
+          fallbackBody,
+          accessToken
+        );
+        return res.json({
+          style: 'issue',
+          fallback: true,
+          fallbackReason: `PR Review API rejected: ${ghMsg?.slice(0, 200)}`,
+          comment: fb,
+          inlineCount: 0,
+          findingsCount: review.findings.length,
+        });
+      }
+      throw err;
+    }
   } catch (err) {
     next(err);
   }

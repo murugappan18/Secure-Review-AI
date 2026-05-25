@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Landing from './routes/Landing.jsx';
 import AuthCallback from './routes/AuthCallback.jsx';
 import Dashboard from './routes/Dashboard.jsx';
+import RepoDetail from './routes/RepoDetail.jsx';
 import Reviews from './routes/Reviews.jsx';
 import ReviewTheater from './routes/ReviewTheater.jsx';
 import Settings from './routes/Settings.jsx';
@@ -29,6 +30,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/repos/:owner/:name"
+            element={
+              <ProtectedRoute>
+                <RepoDetail />
               </ProtectedRoute>
             }
           />

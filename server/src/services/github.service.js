@@ -66,6 +66,93 @@ export async function getPullRequestDiff(owner, repo, pullNumber, accessToken) {
   return data; // string when mediaType is diff
 }
 
+// List pull requests on a repo. Used by the repo detail page. state=all so
+// the user can see open, closed, and merged PRs together; closed PRs will
+// have the Review button disabled in the UI.
+export async function listRepoPullRequests(
+  owner,
+  repo,
+  accessToken,
+  { state = 'all', perPage = 50 } = {}
+) {
+  const octokit = client(accessToken);
+  const { data } = await octokit.rest.pulls.list({
+    owner,
+    repo,
+    state,
+    per_page: perPage,
+    sort: 'updated',
+    direction: 'desc',
+  });
+  return data.map((p) => ({
+    number: p.number,
+    title: p.title,
+    state: p.state, // 'open' | 'closed'
+    merged: !!p.merged_at,
+    draft: !!p.draft,
+    author: p.user
+      ? { login: p.user.login, avatarUrl: p.user.avatar_url }
+      : null,
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+    closedAt: p.closed_at,
+    mergedAt: p.merged_at,
+    htmlUrl: p.html_url,
+    headRef: p.head?.ref,
+    baseRef: p.base?.ref,
+  }));
+}
+
+// Post an issue-style comment on a PR (PRs are issues under the hood for
+// the comments API). Used by the "Post comment to PR" button on the
+// Review Theater.
+export async function postIssueComment(
+  owner,
+  repo,
+  pullNumber,
+  body,
+  accessToken
+) {
+  const octokit = client(accessToken);
+  const { data } = await octokit.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: pullNumber,
+    body,
+  });
+  return { id: data.id, htmlUrl: data.html_url };
+}
+
+// Post a full GitHub PR Review, optionally with line-level inline comments
+// anchored to specific file paths + line numbers. `comments` items should be
+// shaped like { path, line, body, side?='RIGHT' }. event='COMMENT' submits
+// the review without approving/requesting changes — most neutral choice for
+// an automated agent.
+export async function createPullRequestReview(
+  owner,
+  repo,
+  pullNumber,
+  { body, comments = [], commitId, event = 'COMMENT' },
+  accessToken
+) {
+  const octokit = client(accessToken);
+  const { data } = await octokit.rest.pulls.createReview({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    body,
+    event,
+    commit_id: commitId, // optional — anchors inline comments to a specific SHA
+    comments: comments.map((c) => ({
+      path: c.path,
+      line: c.line,
+      side: c.side ?? 'RIGHT',
+      body: c.body,
+    })),
+  });
+  return { id: data.id, htmlUrl: data.html_url, state: data.state };
+}
+
 // Structured list of files changed in the PR, with per-file patch chunks.
 export async function getPullRequestFiles(owner, repo, pullNumber, accessToken) {
   const octokit = client(accessToken);

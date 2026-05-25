@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { listUserRepos, getRepoMetadata } from '../services/github.service.js';
+import {
+  listUserRepos,
+  getRepoMetadata,
+  listRepoPullRequests,
+} from '../services/github.service.js';
 import { indexRepo } from '../services/indexer.service.js';
 import { searchCode } from '../services/vectorSearch.service.js';
 import Repo from '../models/Repo.js';
@@ -89,6 +93,98 @@ router.post('/:owner/:name/index', requireAuth, async (req, res, next) => {
     });
 
     res.status(202).json({ repo });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
+// GET /api/repos/:owner/:name/meta — repo metadata + index status for the
+// repo detail page. Combines GitHub metadata with our local index doc so
+// the page renders without two round trips.
+// -----------------------------------------------------------------------
+router.get('/:owner/:name/meta', requireAuth, async (req, res, next) => {
+  try {
+    const { owner, name } = req.params;
+    const fullName = `${owner}/${name}`;
+    const accessToken = req.user.getAccessToken();
+
+    let meta;
+    try {
+      meta = await getRepoMetadata(owner, name, accessToken);
+    } catch (err) {
+      const status = err.status ?? err.response?.status ?? 502;
+      if (status === 404) {
+        return res
+          .status(404)
+          .json({ error: 'repo_not_found', message: `Repo not found: ${fullName}` });
+      }
+      throw err;
+    }
+
+    const local = await Repo.findOne({
+      userId: req.userId,
+      fullName,
+    }).select('indexStatus indexProgress chunkCount lastIndexedAt _id');
+
+    res.json({
+      repo: {
+        owner,
+        name,
+        fullName,
+        defaultBranch: meta.default_branch,
+        description: meta.description,
+        language: meta.language,
+        private: meta.private,
+        htmlUrl: meta.html_url,
+        openIssuesCount: meta.open_issues_count,
+        indexStatus: local?.indexStatus ?? 'not_indexed',
+        indexProgress: local?.indexProgress ?? 0,
+        chunkCount: local?.chunkCount ?? 0,
+        lastIndexedAt: local?.lastIndexedAt ?? null,
+        repoId: local?._id ?? null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
+// GET /api/repos/:owner/:name/pulls?state=all|open|closed
+// List pull requests on this repo. Used by the repo detail page so the
+// user can pick one to review without copy-pasting URLs.
+// -----------------------------------------------------------------------
+router.get('/:owner/:name/pulls', requireAuth, async (req, res, next) => {
+  try {
+    const { owner, name } = req.params;
+    const state = ['open', 'closed', 'all'].includes(req.query.state)
+      ? req.query.state
+      : 'all';
+    const accessToken = req.user.getAccessToken();
+
+    let pulls;
+    try {
+      pulls = await listRepoPullRequests(owner, name, accessToken, {
+        state,
+        perPage: 50,
+      });
+    } catch (err) {
+      const status = err.status ?? err.response?.status ?? 502;
+      if (status === 404) {
+        return res
+          .status(404)
+          .json({ error: 'repo_not_found', message: `Repo not found: ${owner}/${name}` });
+      }
+      if (status === 403) {
+        return res
+          .status(403)
+          .json({ error: 'forbidden', message: 'GitHub denied access to this repo.' });
+      }
+      throw err;
+    }
+
+    res.json({ owner, name, state, count: pulls.length, pulls });
   } catch (err) {
     next(err);
   }

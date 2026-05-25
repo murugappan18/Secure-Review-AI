@@ -1,6 +1,13 @@
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { StopCircle } from 'lucide-react';
+import {
+  StopCircle,
+  MessageSquare,
+  GitPullRequest,
+  CheckCircle2,
+  AlertTriangle,
+  ExternalLink,
+} from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useReviewStream } from '../hooks/useReviewStream.js';
 import Footer from '../components/Footer.jsx';
@@ -18,6 +25,8 @@ import { useState } from 'react';
 export default function ReviewTheater() {
   const { id } = useParams();
   const [focusedFinding, setFocusedFinding] = useState(null);
+  const [postResult, setPostResult] = useState(null);
+  const [postError, setPostError] = useState(null);
 
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
@@ -46,6 +55,22 @@ export default function ReviewTheater() {
       // will arrive a moment later and reconcile the rest.
       queryClient.setQueryData(['review', id], (old) => ({ ...old, ...review }));
     },
+  });
+
+  // Post-to-PR — two styles: 'issue' (single markdown comment) or
+  // 'review' (full GitHub PR review w/ inline line-level comments).
+  const postMutation = useMutation({
+    mutationFn: async (style) => {
+      setPostResult(null);
+      setPostError(null);
+      const res = await api.post(`/api/reviews/${id}/comment`, { style });
+      return res.data;
+    },
+    onSuccess: (data) => setPostResult(data),
+    onError: (err) =>
+      setPostError(
+        err.response?.data?.message ?? err.response?.data?.error ?? err.message
+      ),
   });
 
   const findings = data?.findings ?? [];
@@ -133,6 +158,20 @@ export default function ReviewTheater() {
             </div>
           </div>
 
+          {/* Post-to-GitHub bar — shown only on completed reviews. */}
+          {data.status === 'complete' && (
+            <div className="max-w-7xl mx-auto px-6 pt-4">
+              <PostToGitHubBar
+                review={data}
+                pending={postMutation.isPending}
+                pendingStyle={postMutation.variables}
+                onPost={(style) => postMutation.mutate(style)}
+                result={postResult}
+                error={postError}
+              />
+            </div>
+          )}
+
           {/* Two-column main: diff (left) + agent thinking (right) */}
           <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
             <div className="lg:col-span-3 min-w-0">
@@ -161,6 +200,89 @@ export default function ReviewTheater() {
         </>
       )}
       <Footer />
+    </div>
+  );
+}
+
+// Bar with the two "post to GitHub" buttons, success preview, and any
+// error from the most recent attempt. Only shown for complete reviews.
+function PostToGitHubBar({ review, pending, pendingStyle, onPost, result, error }) {
+  const findingsCount = review.findings?.length ?? 0;
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium text-slate-200">
+            Post this review to the PR
+          </h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {findingsCount === 0
+              ? 'No findings — posting will simply confirm a clean review on the PR.'
+              : 'Pick how to share the findings with the PR author.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => onPost('issue')}
+            disabled={pending}
+            title="Post as a single markdown comment on the PR conversation tab"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded border border-slate-700 text-slate-200 bg-slate-900/40 hover:bg-slate-800 hover:border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            {pending && pendingStyle === 'issue' ? 'Posting...' : 'Post as comment'}
+          </button>
+          <button
+            onClick={() => onPost('review')}
+            disabled={pending}
+            title="Post as a GitHub PR Review with inline line-level comments where possible"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded bg-slate-100 text-slate-900 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <GitPullRequest className="w-3.5 h-3.5" />
+            {pending && pendingStyle === 'review' ? 'Posting...' : 'Post as PR review'}
+          </button>
+        </div>
+      </div>
+
+      {result && (
+        <div className="mt-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs">
+          <div className="flex items-start gap-2 text-emerald-300">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium">
+                Posted as {result.style === 'review' ? 'PR review' : 'comment'}
+                {result.fallback ? ' (fell back to comment style)' : ''}.
+                {result.inlineCount > 0 && (
+                  <> {result.inlineCount} inline finding{result.inlineCount === 1 ? '' : 's'}.</>
+                )}
+                {result.skippedCount > 0 && (
+                  <> {result.skippedCount} summarized in the body (line not in PR diff).</>
+                )}
+              </p>
+              {result.fallbackReason && (
+                <p className="text-emerald-400/80 mt-0.5">{result.fallbackReason}</p>
+              )}
+              {result.comment?.htmlUrl && (
+                <a
+                  href={result.comment.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 mt-1 underline hover:text-emerald-200"
+                >
+                  View on GitHub <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <p className="flex-1">Failed to post: {error}</p>
+        </div>
+      )}
     </div>
   );
 }

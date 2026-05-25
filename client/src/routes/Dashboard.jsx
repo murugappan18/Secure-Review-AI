@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import { api } from '../lib/api.js';
 import Footer from '../components/Footer.jsx';
 import AppHeader from '../components/AppHeader.jsx';
@@ -142,17 +142,27 @@ export default function Dashboard() {
               {data.map((repo) => (
                 <li
                   key={repo.id}
-                  className="rounded-lg border border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4"
+                  onClick={() => navigate(`/repos/${repo.owner}/${repo.name}`)}
+                  className="rounded-lg border border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4 cursor-pointer hover:bg-slate-900 hover:border-slate-700 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
+                      <Link
+                        to={`/repos/${repo.owner}/${repo.name}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-mono text-sm text-slate-200 hover:text-white hover:underline truncate"
+                      >
+                        {repo.fullName}
+                      </Link>
                       <a
                         href={repo.htmlUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-mono text-sm text-slate-200 hover:underline truncate"
+                        onClick={(e) => e.stopPropagation()}
+                        title="Open on GitHub"
+                        className="text-slate-500 hover:text-slate-300"
                       >
-                        {repo.fullName}
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                       {repo.private && <Pill tone="neutral">private</Pill>}
                       {repo.language && <Pill tone="lang">{repo.language}</Pill>}
@@ -162,17 +172,22 @@ export default function Dashboard() {
                         {repo.description}
                       </p>
                     )}
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Click to view pull requests →
+                    </p>
                   </div>
 
-                  <IndexAction
-                    repo={repo}
-                    onIndex={() => indexMutation.mutate(repo)}
-                    isStarting={
-                      indexMutation.isPending &&
-                      indexMutation.variables?.id === repo.id
-                    }
-                    canIndex={canIndex}
-                  />
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <IndexAction
+                      repo={repo}
+                      onIndex={() => indexMutation.mutate(repo)}
+                      isStarting={
+                        indexMutation.isPending &&
+                        indexMutation.variables?.id === repo.id
+                      }
+                      canIndex={canIndex}
+                    />
+                  </div>
                 </li>
               ))}
             </ul>
