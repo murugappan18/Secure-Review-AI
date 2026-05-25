@@ -58,6 +58,17 @@ export default function ReviewTheater() {
         throw err;
       }
     },
+    // Polling fallback: while the review is in flight, refetch every 3s.
+    // The Socket.IO live stream is still the primary update mechanism — it
+    // delivers per-event granularity (tool_call, phase_start, ...). Polling
+    // is the belt-and-braces backup for when the socket can't connect or
+    // drops (Render free tier WebSocket upgrades are flaky). On terminal
+    // status (complete/failed/stopped), polling turns off automatically.
+    refetchInterval: (q) => {
+      const status = q.state.data?.review?.status;
+      return status === 'queued' || status === 'running' ? 3000 : false;
+    },
+    refetchIntervalInBackground: false,
   });
 
   const review = data?.review;

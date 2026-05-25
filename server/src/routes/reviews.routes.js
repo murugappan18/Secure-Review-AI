@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { setMaxListeners } from 'node:events';
 import { requireAuth } from '../middleware/auth.js';
 import { parsePrUrl, runReview } from '../agent/agentLoop.js';
 import { reviewEventBus } from '../sockets/eventBus.js';
@@ -112,6 +113,11 @@ router.post('/', requireAuth, async (req, res, next) => {
     // AbortController for the Stop button. Stored in the in-flight map so
     // POST /:id/stop can look it up and call .abort(). Removed in finally.
     const controller = new AbortController();
+    // The signal is shared across every LLM call + throttle wait + phase
+    // boundary check for the WHOLE review. Easily 30+ subscribers. Node's
+    // default warning threshold of 10 is for unbounded loops; for our
+    // bounded fan-out we just bump it on this specific signal.
+    setMaxListeners(50, controller.signal);
     const reviewIdStr = String(review._id);
     inFlightReviews.set(reviewIdStr, controller);
     console.log(`[review:${reviewIdStr}] registered controller (inFlight now: ${inFlightReviews.size})`);

@@ -27,6 +27,12 @@ async function throttleGemini() {
 // Same as throttleGemini, but interruptible by an AbortSignal. Used by
 // the agent loop so the Stop button doesn't have to wait up to 4.5s for
 // the in-flight throttle sleep to finish.
+//
+// We explicitly remove the abort listener when the wait completes
+// normally — `{ once: true }` only fires on the EVENT, not on a normal
+// timer resolve. Without the manual remove, each LLM call leaks one
+// listener on the shared per-review AbortSignal, eventually tripping
+// Node's MaxListenersExceededWarning at 10.
 async function throttleGeminiAbortable(signal) {
   if (!signal) return throttleGemini();
   const now = Date.now();
@@ -34,11 +40,15 @@ async function throttleGeminiAbortable(signal) {
   if (elapsed < MIN_REQUEST_INTERVAL_MS) {
     const wait = MIN_REQUEST_INTERVAL_MS - elapsed;
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(resolve, wait);
+      let timer;
       const onAbort = () => {
         clearTimeout(timer);
         reject(new Error('aborted_during_throttle'));
       };
+      timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, wait);
       signal.addEventListener('abort', onAbort, { once: true });
     });
   }
