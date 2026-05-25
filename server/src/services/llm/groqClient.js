@@ -89,7 +89,11 @@ export async function chat({ messages, tools, model }) {
     // and rejects with 400 / code='tool_use_failed', stashing the
     // malformed output in `failed_generation`. We recover by parsing
     // that text ourselves and synthesising a normal tool-call response.
-    const recovered = tryRecoverFromToolUseFailure(err, modelName);
+    // The `tools` argument is needed for validation — Llama also
+    // sometimes invents tool names that aren't in the request, in which
+    // case it usually meant to emit final-answer text but wrapped it in
+    // function-call syntax. We rescue that as text content.
+    const recovered = tryRecoverFromToolUseFailure(err, modelName, tools);
     if (recovered) return recovered;
     throw err;
   }
@@ -133,7 +137,7 @@ export async function chat({ messages, tools, model }) {
 // the model had emitted them correctly the first time. Callers above
 // don't need to know any of this happened.
 
-function tryRecoverFromToolUseFailure(err, modelName) {
+function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   // The Groq SDK shape: err.status, err.error = { message, code, failed_generation }.
   // Fall back to err.response?.data for the raw axios case just in case.
   const status = err?.status ?? err?.response?.status;
@@ -144,35 +148,71 @@ function tryRecoverFromToolUseFailure(err, modelName) {
   const parsed = parseLlamaToolUseFailure(failed);
   if (!parsed || parsed.length === 0) return null;
 
-  console.warn(
-    `[groq] recovered ${parsed.length} tool call(s) from tool_use_failed: ` +
-      parsed.map((c) => c.name).join(', ')
-  );
+  // Validate every parsed call's name against the actual tool registry
+  // that was passed in this request. If ALL are real tools, the model
+  // genuinely meant to call them — Groq's parser just choked on the
+  // text format. Return them as proper tool calls.
+  const validNames = new Set((availableTools ?? []).map((t) => t.name));
+  const allValid =
+    validNames.size > 0 && parsed.every((c) => validNames.has(c.name));
 
+  if (allValid) {
+    console.warn(
+      `[groq] recovered ${parsed.length} tool call(s) from tool_use_failed: ` +
+        parsed.map((c) => c.name).join(', ')
+    );
+    return {
+      provider: 'groq',
+      model: modelName,
+      text: null,
+      toolCalls: parsed.map((c, i) => ({
+        id: synthToolCallId(c.name, i),
+        name: c.name,
+        arguments: c.arguments,
+      })),
+      finishReason: 'tool_use',
+      // Groq didn't report usage on the failed response.
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
+
+  // At least one tool name isn't in our registry. Llama almost always
+  // does this when it MEANT to emit final-answer JSON for the current
+  // phase but wrapped it in `<function=...>` syntax by mistake (a known
+  // failure mode of llama-3.x-8b-instant). The first call's args is the
+  // intended JSON answer — return it as text content so the agent loop
+  // treats it as the phase's final output.
+  const first = parsed[0];
+  console.warn(
+    `[groq] recovered final-answer JSON from tool_use_failed: ` +
+      `model emitted '${first.name}' which isn't a registered tool ` +
+      `(available: ${[...validNames].join(', ') || 'none'}). ` +
+      `Treating the inner JSON as the phase's final text answer.`
+  );
   return {
     provider: 'groq',
     model: modelName,
-    text: null,
-    toolCalls: parsed.map((c, i) => ({
-      id: synthToolCallId(c.name, i),
-      name: c.name,
-      arguments: c.arguments,
-    })),
-    finishReason: 'tool_use',
-    // Groq didn't report usage on the failed response.
+    text: JSON.stringify(first.arguments),
+    toolCalls: [],
+    finishReason: 'stop',
     usage: { inputTokens: 0, outputTokens: 0 },
   };
 }
 
 // Parse one-or-more <function=NAME{...JSON...}</function> blocks out of
-// the text Llama produced. Tolerates: multiple calls in the same blob,
-// whitespace between </function> blocks, trailing junk after the last
-// closing tag.
+// the text Llama produced. Tolerates:
+//   - Two opening-tag variants seen in the wild:
+//       <function=NAME{...}    (no '>' between name and JSON)
+//       <function=NAME>{...}   (with a closing '>' for the opening tag)
+//   - Optional whitespace around the '>' or before the '{'.
+//   - Multiple calls in the same blob.
+//   - Trailing junk after the last closing tag.
 function parseLlamaToolUseFailure(text) {
   if (!text || typeof text !== 'string') return null;
   const calls = [];
-  // Match the opening <function=NAME up to (but not including) the {.
-  const re = /<function=([\w.-]+)\s*\{/g;
+  // `>?` makes the closing-bracket of the opening tag optional so we
+  // catch BOTH formats. \s* on either side handles whitespace variants.
+  const re = /<function=([\w.-]+)\s*>?\s*\{/g;
   let m;
   while ((m = re.exec(text)) !== null) {
     const name = m[1];
