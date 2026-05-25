@@ -106,11 +106,11 @@ The agent autonomously decides which tools to call within each phase. Every find
 │  ┌────────────┐                       ┌────────────────────┐   │
 │  │ LLM Router │                       │  MCP Tool Registry │   │
 │  │ (Gemini /  │                       │  + Adapter         │   │
-│  │  Claude /  │                       │ ┌──────────────────┐│   │
-│  │  Groq)     │                       │ │ codebase MCP     ││   │
-│  └────────────┘                       │ │ security MCP     ││   │
-│                                       │ │ github MCP       ││   │
-│                                       │ └──────────────────┘│   │
+│  │  Claude /  │                       │ ┌─────────────────┐│   │
+│  │  Groq)     │                       │ │ codebase MCP    ││   │
+│  └────────────┘                       │ │ security MCP    ││   │
+│                                       │ │ github MCP      ││   │
+│                                       │ └─────────────────┘│   │
 │                                       └────────────────────┘   │
 └────────────────────────────────────────────────────────────────┘
          │
@@ -140,7 +140,7 @@ For the engineering trade-offs behind these choices, see [**TECHNICAL_DECISIONS.
 ### Setup
 
 ```bash
-git clone https://github.com/<you>/Secure-Review-AI.git
+git clone https://github.com/murugappan18/Secure-Review-AI.git
 cd Secure-Review-AI
 
 # Backend

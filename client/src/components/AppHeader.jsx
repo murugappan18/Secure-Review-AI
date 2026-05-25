@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { LogOut } from 'lucide-react';
 import { useAuthStore } from '../store/authStore.js';
 import ThemeToggle from './ThemeToggle.jsx';
 
@@ -65,9 +66,12 @@ export default function AppHeader({ active, maxWidth = '5xl' }) {
             </span>
             <button
               onClick={handleLogout}
-              className="text-xs text-slate-400 hover:text-slate-200 ml-1 sm:ml-2 whitespace-nowrap"
+              aria-label="Sign out"
+              title="Sign out"
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-700 text-slate-300 bg-slate-900/40 hover:bg-slate-800 hover:text-slate-100 hover:border-slate-500 ml-1 sm:ml-2 whitespace-nowrap transition-colors"
             >
-              Sign out
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </div>

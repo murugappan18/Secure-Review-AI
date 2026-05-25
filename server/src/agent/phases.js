@@ -166,7 +166,93 @@ export async function reasonExploitability(ctx, runOpts) {
     onEvent: runOpts.onEvent,
   });
 
-  return finalize(result);
+  const out = finalize(result);
+
+  // If the first pass produced parseable JSON, we're done.
+  if (!out.parseError) return out;
+  // If there's nothing the LLM looked at, no point retrying — it has no
+  // evidence to synthesize from.
+  if (!result.toolCalls?.length) return out;
+
+  // ---- Forced-synthesis retry --------------------------------------------
+  // Common failure mode (esp. Gemini Flash Lite): the agent burns all
+  // iterations on lookup_cwe / search_code calls but never produces the
+  // final JSON. We have rich tool-call evidence on hand — fold it back into
+  // the prompt and ask the LLM to emit ONLY the JSON now, no more tools.
+  console.warn(
+    `[agent] Phase 3 first pass produced no parseable JSON (${out.parseError}); ` +
+      `retrying with ${result.toolCalls.length} tool-call summary, no tools.`
+  );
+
+  const toolSummary = result.toolCalls
+    .map((tc, i) => {
+      const args = safeStringify(tc.arguments);
+      const res = safeStringify(tc.result, 1000);
+      return `${i + 1}. ${tc.tool}(${args})\n   → ${res}`;
+    })
+    .join('\n\n');
+
+  const forced = await runWithTools({
+    phaseName: 'reason_exploitability_retry',
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: PHASE_3_PROMPT },
+      ...messages.slice(2), // diff summary + context + patches blocks
+      {
+        role: 'user',
+        content:
+          `You already made ${result.toolCalls.length} tool calls. ` +
+          `Summary of what they returned:\n\n${toolSummary}\n\n` +
+          `Now produce the STRICT JSON specified in the Phase 3 instructions above. ` +
+          `Do NOT call more tools. Do NOT add prose or markdown fences. ` +
+          `Emit only the JSON object with the "candidates" array. ` +
+          `If, given this evidence, you cannot identify any real vulnerability with ` +
+          `confidence ≥ 0.5, return {"candidates": []}.`,
+      },
+    ],
+    tools: [], // hard-disable tools — force a text answer
+    ctx,
+    preferProvider: runOpts.preferProvider,
+    onEvent: runOpts.onEvent,
+    maxIterations: 1,
+  });
+
+  const forcedOut = finalize(forced);
+
+  // Merge: keep the original tool calls (so the UI still shows what was
+  // gathered) but use the retry's text as the parsed output.
+  return {
+    runResult: {
+      ...forced,
+      toolCalls: [...result.toolCalls, ...(forced.toolCalls ?? [])],
+      usage: {
+        inputTokens:
+          (result.usage?.inputTokens ?? 0) + (forced.usage?.inputTokens ?? 0),
+        outputTokens:
+          (result.usage?.outputTokens ?? 0) + (forced.usage?.outputTokens ?? 0),
+      },
+      providers: [
+        ...new Set([
+          ...(result.providers ?? []),
+          ...(forced.providers ?? []),
+        ]),
+      ],
+    },
+    parsed: forcedOut.parsed,
+    parseError: forcedOut.parseError
+      ? `phase 3 retry also failed: ${forcedOut.parseError}`
+      : null,
+  };
+}
+
+// Safely stringify possibly-huge / circular tool results for prompt inclusion.
+function safeStringify(value, maxLen = 500) {
+  try {
+    const s = JSON.stringify(value);
+    return s.length > maxLen ? s.slice(0, maxLen) + '…[truncated]' : s;
+  } catch {
+    return '[unserializable]';
+  }
 }
 
 // -------------------------------------------------------------------------
