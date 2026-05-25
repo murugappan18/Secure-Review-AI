@@ -29,6 +29,7 @@ import { useState } from 'react';
 export default function ReviewTheater() {
   const { id } = useParams();
   const currentUser = useAuthStore((s) => s.user);
+  const authBootstrapped = useAuthStore((s) => s.bootstrapped);
   const [focusedFinding, setFocusedFinding] = useState(null);
   const [postResult, setPostResult] = useState(null);
   const [postError, setPostError] = useState(null);
@@ -169,8 +170,13 @@ export default function ReviewTheater() {
           nav (Dashboard / Reviews / Settings). Anonymous viewers who
           followed a public link from a GitHub PR comment get the lighter
           PublicHeader. The owner-only ACTIONS (post-to-GitHub, visibility
-          toggle, Stop button) are still gated by `isOwner`. */}
-      {currentUser ? (
+          toggle, Stop button) are still gated by `isOwner`.
+          We wait for the app-root auth bootstrap before deciding which
+          header to show — otherwise a refreshed /reviews/:id flashes the
+          PublicHeader for ~200ms while /auth/me is in flight. */}
+      {!authBootstrapped ? (
+        <HeaderSkeleton />
+      ) : currentUser ? (
         <AppHeader active="reviews" maxWidth="7xl" />
       ) : (
         <PublicHeader signedIn={false} />
@@ -460,6 +466,23 @@ function VisibilityPill({ isPublic, pending, onToggle }) {
         />
       </button>
     </span>
+  );
+}
+
+// Skeleton header rendered for the brief window between the page
+// loading and the app-root auth bootstrap completing. Same height as
+// the real headers so the layout doesn't shift when one of them
+// actually renders.
+function HeaderSkeleton() {
+  return (
+    <header className="border-b border-slate-800">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2">
+        <span className="text-base sm:text-lg font-semibold whitespace-nowrap">
+          SecureReview AI
+        </span>
+        <span className="text-xs text-slate-500">Loading...</span>
+      </div>
+    </header>
   );
 }
 

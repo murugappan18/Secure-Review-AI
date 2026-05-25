@@ -1,42 +1,19 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
-import { api, backendUrl } from '../lib/api.js';
+import { backendUrl } from '../lib/api.js';
 import Footer from '../components/Footer.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 
 export default function Landing() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const bootstrapped = useAuthStore((s) => s.bootstrapped);
-  const setUser = useAuthStore((s) => s.setUser);
-  const setBootstrapped = useAuthStore((s) => s.setBootstrapped);
   const [params] = useSearchParams();
   const oauthError = params.get('error');
 
-  // Probe the httpOnly cookie on first paint — if it's valid, /auth/me
-  // returns the user and we skip past the marketing page straight to the
-  // dashboard. Sharing the bootstrapped flag with ProtectedRoute means
-  // we only ever fire this probe once per page session.
-  useEffect(() => {
-    if (bootstrapped) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data } = await api.get('/auth/me');
-        if (!cancelled) setUser(data.user);
-      } catch {
-        /* not signed in — stay on landing */
-      } finally {
-        if (!cancelled) setBootstrapped(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [bootstrapped, setUser, setBootstrapped]);
-
-  // Once we have a hydrated user, skip the marketing page.
+  // Auth state is hydrated at the app root by AuthBootstrap — we just
+  // consume it here. If a hydrated user already exists, skip past the
+  // marketing page straight to the dashboard.
   useEffect(() => {
     if (user) navigate('/dashboard', { replace: true });
   }, [user, navigate]);
