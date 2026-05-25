@@ -1,6 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
 import { useAuthStore } from '../store/authStore.js';
+import { api } from '../lib/api.js';
+import { disconnectSocket } from '../lib/socket.js';
 import ThemeToggle from './ThemeToggle.jsx';
 
 const NAV = [
@@ -19,7 +21,15 @@ export default function AppHeader({ active, maxWidth = '5xl' }) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // If the request fails (network etc.), clear local state anyway —
+      // the cookie may still be on the browser, but the user clicked Sign
+      // Out so we should at least drop the in-memory user.
+    }
+    disconnectSocket();
     logout();
     navigate('/', { replace: true });
   }

@@ -103,6 +103,13 @@ const reviewSchema = new mongoose.Schema(
     riskAssessment: { type: String, enum: [...RISK_LEVELS, null], default: null },
 
     tokensUsed: { type: Number, default: 0 },
+
+    // Per-review visibility. Default private — only the owner can read it
+    // via the authenticated GET. Flipped to true when the owner posts the
+    // review to GitHub (so the link in the PR comment works for non-users)
+    // or manually via the visibility toggle in the Review Theater.
+    isPublic: { type: Boolean, default: false, index: true },
+    publishedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

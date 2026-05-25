@@ -6,22 +6,23 @@ import { useAuthStore } from '../store/authStore.js';
 // backend and CORS allows it.
 const baseURL = import.meta.env.VITE_API_URL || '';
 
-export const api = axios.create({ baseURL });
+// `withCredentials: true` makes the browser include our httpOnly `sr_token`
+// cookie on every request. Combined with the server's CORS
+// `credentials: true` + explicit origin, the browser will accept the
+// Set-Cookie response from the OAuth callback even though API and client
+// live on different domains (Render ↔ Vercel).
+export const api = axios.create({ baseURL, withCredentials: true });
 
-api.interceptors.request.use((config) => {
-  const { token } = useAuthStore.getState();
-  if (token) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
+// 401 means the cookie expired or was cleared — drop the user from state
+// so the route guard kicks them back to the landing page.
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      useAuthStore.getState().logout();
+      // Don't clobber state if we're already unauthenticated (avoids
+      // re-rendering loops while the auth bootstrap probe is running).
+      const store = useAuthStore.getState();
+      if (store.user) store.logout();
     }
     return Promise.reject(err);
   }

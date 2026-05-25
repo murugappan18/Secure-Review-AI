@@ -218,6 +218,31 @@ router.post('/:id/stop', requireAuth, async (req, res, next) => {
 });
 
 // -----------------------------------------------------------------------
+// PUT /api/reviews/:id/visibility — flip a review between public and
+// private. Public reviews can be read by anyone via /api/public/reviews/:id
+// without authentication, which is what makes the URL we post into the PR
+// comment actually usable by the PR author.
+// Body: { isPublic: boolean }
+// -----------------------------------------------------------------------
+router.put('/:id/visibility', requireAuth, async (req, res, next) => {
+  try {
+    const review = await Review.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+    if (!review) return res.status(404).json({ error: 'review_not_found' });
+
+    const wantPublic = !!req.body?.isPublic;
+    review.isPublic = wantPublic;
+    if (wantPublic && !review.publishedAt) review.publishedAt = new Date();
+    await review.save();
+    res.json({ review });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
 // POST /api/reviews/:id/comment — post the review back to the source PR.
 // Body: { style: 'issue' | 'review' } (default 'issue').
 //   - 'issue':  single markdown comment on the PR conversation tab
@@ -242,6 +267,16 @@ router.post('/:id/comment', requireAuth, async (req, res, next) => {
 
     const style = req.body?.style === 'review' ? 'review' : 'issue';
     const accessToken = req.user.getAccessToken();
+
+    // The link we render into the PR comment points at /reviews/:id on the
+    // frontend. For that link to work for the PR author (who probably isn't
+    // a SecureReview AI user), the review needs to be publicly readable.
+    // Flip it on auto — owners can flip back to private from Review Theater.
+    if (!review.isPublic) {
+      review.isPublic = true;
+      review.publishedAt = review.publishedAt ?? new Date();
+      await review.save();
+    }
 
     if (style === 'issue') {
       const body = renderReviewMarkdown(review);

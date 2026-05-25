@@ -14,6 +14,7 @@ import { configurePassport } from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
 import reposRoutes from './routes/repos.routes.js';
 import reviewsRoutes from './routes/reviews.routes.js';
+import publicReviewsRoutes from './routes/publicReviews.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { attachReviewSocket } from './sockets/reviewSocket.js';
@@ -79,6 +80,7 @@ app.get('/api/health', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/api/repos', reposRoutes);
 app.use('/api/reviews', reviewsRoutes);
+app.use('/api/public', publicReviewsRoutes); // unauthenticated, only public reviews
 app.use('/api/settings', settingsRoutes);
 
 // --- Error handler (must be last) ---
@@ -97,10 +99,16 @@ const io = new IOServer(httpServer, {
   },
 });
 
-// JWT handshake: every socket must present a valid JWT in handshake.auth.token.
-// We attach userId to socket.data so handlers can do owner checks.
+// JWT handshake: every socket must present a valid JWT. The token can
+// arrive via either:
+//   1. The `sr_token` httpOnly cookie (preferred — same source the REST
+//      API uses; the browser sends it automatically with withCredentials).
+//   2. handshake.auth.token (legacy — kept so we don't break in-flight
+//      sessions during the cookie migration).
 io.use((socket, next) => {
-  const token = socket.handshake.auth?.token;
+  const cookieHeader = socket.handshake.headers?.cookie || '';
+  const cookieToken = parseCookie(cookieHeader, 'sr_token');
+  const token = cookieToken || socket.handshake.auth?.token;
   if (!token) return next(new Error('no_auth_token'));
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
@@ -110,6 +118,19 @@ io.use((socket, next) => {
     next(new Error(`invalid_token: ${err.message}`));
   }
 });
+
+// Minimal cookie-header parser — avoids pulling in cookie-parser just for
+// the socket layer. Looks up one named cookie, returns undefined if absent.
+function parseCookie(header, name) {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const k = part.slice(0, eq).trim();
+    if (k === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return undefined;
+}
 
 attachReviewSocket(io);
 

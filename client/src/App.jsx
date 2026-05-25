@@ -49,14 +49,13 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/reviews/:id"
-            element={
-              <ProtectedRoute>
-                <ReviewTheater />
-              </ProtectedRoute>
-            }
-          />
+          {/* Reviews are world-readable when their owner has flipped
+              isPublic=true (auto-set when posting to GitHub). The component
+              tries the authenticated endpoint first, then falls back to
+              the public one — so signed-in owners get the full Review
+              Theater, and PR authors clicking the link from the GitHub
+              comment get a read-only view without needing to sign in. */}
+          <Route path="/reviews/:id" element={<ReviewTheater />} />
           <Route
             path="/settings"
             element={

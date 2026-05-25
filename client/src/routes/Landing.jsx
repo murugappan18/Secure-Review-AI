@@ -1,20 +1,45 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
-import { backendUrl } from '../lib/api.js';
+import { api, backendUrl } from '../lib/api.js';
 import Footer from '../components/Footer.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 
 export default function Landing() {
   const navigate = useNavigate();
-  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const bootstrapped = useAuthStore((s) => s.bootstrapped);
+  const setUser = useAuthStore((s) => s.setUser);
+  const setBootstrapped = useAuthStore((s) => s.setBootstrapped);
   const [params] = useSearchParams();
   const oauthError = params.get('error');
 
-  // If we already have a JWT, skip the marketing page.
+  // Probe the httpOnly cookie on first paint — if it's valid, /auth/me
+  // returns the user and we skip past the marketing page straight to the
+  // dashboard. Sharing the bootstrapped flag with ProtectedRoute means
+  // we only ever fire this probe once per page session.
   useEffect(() => {
-    if (token) navigate('/dashboard', { replace: true });
-  }, [token, navigate]);
+    if (bootstrapped) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/auth/me');
+        if (!cancelled) setUser(data.user);
+      } catch {
+        /* not signed in — stay on landing */
+      } finally {
+        if (!cancelled) setBootstrapped(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapped, setUser, setBootstrapped]);
+
+  // Once we have a hydrated user, skip the marketing page.
+  useEffect(() => {
+    if (user) navigate('/dashboard', { replace: true });
+  }, [user, navigate]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
