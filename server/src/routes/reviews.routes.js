@@ -277,6 +277,10 @@ router.post('/:id/rerun', requireAuth, async (req, res, next) => {
     setMaxListeners(50, controller.signal);
     const reviewIdStr = String(newReview._id);
     inFlightReviews.set(reviewIdStr, controller);
+    console.log(
+      `[review:${reviewIdStr}] registered controller via rerun ` +
+        `(inFlight now: ${inFlightReviews.size}, original=${String(original._id)})`
+    );
 
     setImmediate(() => {
       runWithUserContext(userCtx, () => {
@@ -297,6 +301,7 @@ router.post('/:id/rerun', requireAuth, async (req, res, next) => {
             })
             .finally(() => {
               inFlightReviews.delete(reviewIdStr);
+              console.log(`[review:${reviewIdStr}] unregistered controller`);
             });
         });
       });

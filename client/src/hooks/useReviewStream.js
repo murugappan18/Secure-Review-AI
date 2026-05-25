@@ -6,6 +6,13 @@ import { getSocket } from '../lib/socket.js';
 // `['review', reviewId]` directly so the existing ReviewTheater rendering
 // works unchanged — it consumes the same useQuery result.
 //
+// IMPORTANT cache shape contract: ReviewTheater's queryFn returns
+//   { review: Review, isOwner: boolean }
+// so every cache write here MUST preserve that wrapper. An earlier version
+// of this file stored the raw Review object directly, which silently broke
+// the page when a socket replay landed (data.review became undefined and
+// the body rendered blank).
+//
 // Returns { connected, lastEventAt } purely for UI affordances
 // (e.g., a "LIVE" pulse indicator).
 
@@ -23,14 +30,22 @@ export function useReviewStream(reviewId, { enabled = true } = {}) {
     socket.on('disconnect', setConn(false));
     if (socket.connected) setConnected(true);
 
+    // Server pushes the current full review state on subscribe. Re-wrap
+    // into the { review, isOwner } shape the query cache uses. We assume
+    // isOwner=true because socket replay is only delivered to authenticated
+    // subscribers (handshake middleware rejects unauthenticated sockets).
     function handleReplay({ review }) {
-      queryClient.setQueryData(['review', reviewId], review);
+      queryClient.setQueryData(['review', reviewId], (old) =>
+        old ? { ...old, review } : { review, isOwner: true }
+      );
     }
+
     function handleEvent(event) {
       setLastEventAt(Date.now());
       queryClient.setQueryData(['review', reviewId], (old) => {
         if (!old) return old;
-        return applyEvent(old, event);
+        // applyEvent operates on the INNER review. Unwrap, mutate, re-wrap.
+        return { ...old, review: applyEvent(old.review, event) };
       });
       // On terminal events, the server has persisted the final findings
       // array and summary; refetch to pull them in.
@@ -66,8 +81,11 @@ export function useReviewStream(reviewId, { enabled = true } = {}) {
 }
 
 // Mutate the cached Review document for each incremental event so the UI
-// renders the live progress without re-fetching.
+// renders the live progress without re-fetching. Operates on the INNER
+// review object — the caller is responsible for unwrapping/rewrapping
+// the { review, isOwner } cache wrapper.
 function applyEvent(review, event) {
+  if (!review) return review;
   const now = new Date().toISOString();
   switch (event.type) {
     case 'review_start':
