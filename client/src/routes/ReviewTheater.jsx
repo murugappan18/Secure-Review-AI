@@ -58,14 +58,22 @@ export default function ReviewTheater() {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
           const res = await api.get(`/api/reviews/${id}`);
-          return { review: res.data.review, isOwner: true };
+          const cached = queryClient.getQueryData(['review', id]);
+          return {
+            review: mergeWithLiveCache(res.data.review, cached?.review),
+            isOwner: true,
+          };
         } catch (err) {
           const status = err.response?.status;
           // Definite "not your review" → try the public read.
           if (status === 401 || status === 404) {
             try {
               const pub = await api.get(`/api/public/reviews/${id}`);
-              return { review: pub.data.review, isOwner: false };
+              const cached = queryClient.getQueryData(['review', id]);
+              return {
+                review: mergeWithLiveCache(pub.data.review, cached?.review),
+                isOwner: false,
+              };
             } catch (pubErr) {
               // Public also failed (private review or doesn't exist).
               throw pubErr;
@@ -467,6 +475,46 @@ function VisibilityPill({ isPublic, pending, onToggle }) {
       </button>
     </span>
   );
+}
+
+// Merge a freshly-polled server snapshot with the cached optimistic state
+// from live socket events.
+//
+// Why this exists: the server only persists `review.phases` on phase
+// completion, and `review.toolCalls` only at the very end of the entire
+// review. Meanwhile the socket streams `phase_start` and `tool_call`
+// events as they happen, which we apply to the cache optimistically. If
+// polling then naively replaces the cache with the server snapshot, the
+// in-progress phase indicator and the current phase's tool calls vanish
+// for ~3s until the next socket event refills them — the UI flickers.
+//
+// Strategy: for a still-running review, take whichever of (server, cache)
+// has the LONGER phases / toolCalls array. Longer means "more advanced
+// state" — either more completed phases (server caught up) or one more
+// in-progress entry from the socket (cache is ahead). For terminal
+// statuses (complete/failed/stopped), the server is authoritative.
+function mergeWithLiveCache(serverReview, cachedReview) {
+  if (!serverReview) return serverReview;
+  if (!cachedReview) return serverReview;
+
+  // Once the review terminates the server has the canonical, complete
+  // state — no further socket events should arrive that the server
+  // doesn't already know about.
+  const isLive =
+    serverReview.status === 'queued' || serverReview.status === 'running';
+  if (!isLive) return serverReview;
+
+  const phases =
+    (cachedReview.phases?.length ?? 0) > (serverReview.phases?.length ?? 0)
+      ? cachedReview.phases
+      : serverReview.phases;
+  const toolCalls =
+    (cachedReview.toolCalls?.length ?? 0) >
+    (serverReview.toolCalls?.length ?? 0)
+      ? cachedReview.toolCalls
+      : serverReview.toolCalls;
+
+  return { ...serverReview, phases, toolCalls };
 }
 
 // Skeleton header rendered for the brief window between the page
