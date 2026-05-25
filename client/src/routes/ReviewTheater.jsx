@@ -368,30 +368,50 @@ function PostToGitHubBar({ review, pending, pendingStyle, onPost, result, error 
   );
 }
 
-// Public/private visibility pill in the PR header. Owner-only; clicking
-// it flips the review between public and private. Public reviews are
-// what makes the PR-comment link work for non-users.
+// Public/private visibility control in the PR header. Owner-only.
+//
+// Designed as a labelled toggle switch (same shape as the provider
+// enable/disable switch in Settings) so users immediately recognise the
+// affordance — the earlier pill version looked like a status badge, not
+// a control. The Globe/Lock icon + label sits next to the switch so the
+// current state is readable at a glance.
 function VisibilityPill({ isPublic, pending, onToggle }) {
   const Icon = isPublic ? Globe : Lock;
-  const label = isPublic ? 'public' : 'private';
-  const cls = isPublic
-    ? 'border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/15'
-    : 'border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500';
+  const label = isPublic ? 'Public' : 'Private';
+  const labelCls = isPublic ? 'text-sky-300' : 'text-slate-400';
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={pending}
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-slate-700 bg-slate-900/40"
       title={
         isPublic
-          ? 'Public — anyone with the link can view this review. Click to make private.'
-          : 'Private — only you can see this review. Click to make public so the PR link works.'
+          ? 'Public — anyone with the link can view this review. Click the switch to make it private.'
+          : 'Private — only you can see this review. Click the switch to make it public so the PR-comment link works.'
       }
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] uppercase tracking-wider font-medium transition-colors disabled:opacity-50 ${cls}`}
     >
-      <Icon className="w-3 h-3" />
-      {pending ? 'updating...' : label}
-    </button>
+      <Icon className={`w-3 h-3 ${labelCls}`} />
+      <span className={`text-[10px] uppercase tracking-wider font-medium ${labelCls}`}>
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isPublic}
+        aria-label={isPublic ? 'Make private' : 'Make public'}
+        onClick={onToggle}
+        disabled={pending}
+        className={`relative inline-flex h-3.5 w-7 items-center rounded-full transition-colors disabled:opacity-50 ${
+          isPublic
+            ? 'bg-sky-500/80 hover:bg-sky-500'
+            : 'bg-slate-700 hover:bg-slate-600'
+        }`}
+      >
+        <span
+          className={`inline-block h-2.5 w-2.5 rounded-full bg-white shadow-sm transform transition-transform ${
+            isPublic ? 'translate-x-3.5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+    </span>
   );
 }
 
