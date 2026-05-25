@@ -176,6 +176,139 @@ router.get('/', requireAuth, async (req, res, next) => {
 });
 
 // -----------------------------------------------------------------------
+// DELETE /api/reviews/:id — permanently delete a review the user owns.
+// If the review is currently in-flight, abort it first so the background
+// agent doesn't keep working and then try to save to a deleted doc.
+// -----------------------------------------------------------------------
+router.delete('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const review = await Review.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+    if (!review) return res.status(404).json({ error: 'review_not_found' });
+
+    // Abort any in-flight agent loop bound to this review before deleting
+    // the doc, otherwise the background phase saves would re-create or
+    // error against a missing parent.
+    const controller = inFlightReviews.get(String(review._id));
+    if (controller) {
+      controller.abort();
+      inFlightReviews.delete(String(review._id));
+    }
+
+    await Review.deleteOne({ _id: review._id });
+
+    // Notify any open Review Theater on the deleted review so the client
+    // can react (the EventBus is a no-op if no one is subscribed).
+    reviewEventBus.publish(String(review._id), {
+      type: 'review_deleted',
+      reviewId: String(review._id),
+    });
+
+    res.json({ ok: true, deletedId: String(review._id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
+// POST /api/reviews/:id/rerun — start a NEW review against the same PR.
+// The original review doc is left untouched; we create a fresh one and
+// run the agent on it. The client navigates to the new review.
+// -----------------------------------------------------------------------
+router.post('/:id/rerun', requireAuth, async (req, res, next) => {
+  try {
+    const original = await Review.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+    if (!original) return res.status(404).json({ error: 'review_not_found' });
+
+    if (!req.user.hasUsableProvider()) {
+      return res.status(403).json({
+        error: 'no_api_key_configured',
+        message:
+          'Add an API key in Settings before rerunning a review.',
+      });
+    }
+
+    const accessToken = req.user.getAccessToken();
+
+    // Re-probe the PR — it may have been deleted / closed-as-private
+    // between the original run and now. Surfacing this synchronously
+    // avoids creating a doomed Review doc.
+    let prMeta;
+    try {
+      prMeta = await getPullRequest(
+        original.prOwner,
+        original.prRepo,
+        original.prNumber,
+        accessToken
+      );
+    } catch (err) {
+      const status = err.status ?? err.response?.status ?? 502;
+      if (status === 404) {
+        return res.status(404).json({
+          error: 'pr_not_found',
+          message: `The original PR (${original.prOwner}/${original.prRepo}#${original.prNumber}) is no longer accessible.`,
+        });
+      }
+      return res.status(502).json({
+        error: 'github_error',
+        message: `GitHub returned ${status}: ${err.message?.slice(0, 200) ?? 'unknown'}`,
+      });
+    }
+
+    const newReview = await Review.create({
+      userId: req.userId,
+      prUrl: original.prUrl,
+      prOwner: original.prOwner,
+      prRepo: original.prRepo,
+      prNumber: original.prNumber,
+      prTitle: prMeta.title,
+      baseSha: prMeta.base?.sha ?? null,
+      headSha: prMeta.head?.sha ?? null,
+      status: 'queued',
+    });
+
+    const userCtx = req.userContext;
+    const controller = new AbortController();
+    setMaxListeners(50, controller.signal);
+    const reviewIdStr = String(newReview._id);
+    inFlightReviews.set(reviewIdStr, controller);
+
+    setImmediate(() => {
+      runWithUserContext(userCtx, () => {
+        runWithAbortContext(controller.signal, () => {
+          runReview({
+            reviewId: newReview._id,
+            accessToken,
+            signal: controller.signal,
+            emitter: (ev) => {
+              if (ev.type !== 'iteration_start' && ev.type !== 'llm_response') {
+                console.log(`[review:${reviewIdStr}] ${ev.type}`, ev.phase ?? '');
+              }
+              reviewEventBus.publish(reviewIdStr, ev);
+            },
+          })
+            .catch((err) => {
+              console.error(`[review:${reviewIdStr}] rerun crashed:`, err);
+            })
+            .finally(() => {
+              inFlightReviews.delete(reviewIdStr);
+            });
+        });
+      });
+    });
+
+    res.status(202).json({ review: newReview, originalId: String(original._id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -----------------------------------------------------------------------
 // POST /api/reviews/:id/stop — request cancellation of an in-flight review.
 // Marks the review 'stopped' if it's currently queued/running. Idempotent:
 // stopping an already-terminal review is a no-op (returns the doc).

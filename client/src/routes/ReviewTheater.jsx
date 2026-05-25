@@ -46,16 +46,38 @@ export default function ReviewTheater() {
     queryKey: ['review', id],
     retry: false,
     queryFn: async () => {
-      try {
-        const res = await api.get(`/api/reviews/${id}`);
-        return { review: res.data.review, isOwner: true };
-      } catch (err) {
-        const status = err.response?.status;
-        if (status === 401 || status === 404) {
-          const pub = await api.get(`/api/public/reviews/${id}`);
-          return { review: pub.data.review, isOwner: false };
+      // The authenticated endpoint is the primary path. We ONLY fall back
+      // to the public endpoint if the failure is one of "you're not the
+      // owner" (401 no-cookie / 404 different user). Any other failure
+      // (502 cold start, network blip, server crash) gets retried up to
+      // 2x with a small backoff — falling back too eagerly was making
+      // the page render as a non-owner public view when in fact the user
+      // owned the review and the API had just hiccupped.
+      const MAX_RETRIES = 2;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const res = await api.get(`/api/reviews/${id}`);
+          return { review: res.data.review, isOwner: true };
+        } catch (err) {
+          const status = err.response?.status;
+          // Definite "not your review" → try the public read.
+          if (status === 401 || status === 404) {
+            try {
+              const pub = await api.get(`/api/public/reviews/${id}`);
+              return { review: pub.data.review, isOwner: false };
+            } catch (pubErr) {
+              // Public also failed (private review or doesn't exist).
+              throw pubErr;
+            }
+          }
+          // Transient (no response, 5xx). Retry with backoff.
+          const isTransient = !err.response || (status >= 500 && status < 600);
+          if (isTransient && attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+            continue;
+          }
+          throw err;
         }
-        throw err;
       }
     },
     // Polling fallback: while the review is in flight, refetch every 3s.
@@ -142,23 +164,38 @@ export default function ReviewTheater() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Owners see the full app header; public viewers get a lighter
-          version with a Sign-in CTA in place of the user menu. */}
-      {isOwner ? (
+      {/* Header chrome is driven by AUTH STATE, not ownership of this
+          particular review. Signed-in users always get the full app
+          nav (Dashboard / Reviews / Settings). Anonymous viewers who
+          followed a public link from a GitHub PR comment get the lighter
+          PublicHeader. The owner-only ACTIONS (post-to-GitHub, visibility
+          toggle, Stop button) are still gated by `isOwner`. */}
+      {currentUser ? (
         <AppHeader active="reviews" maxWidth="7xl" />
       ) : (
-        <PublicHeader signedIn={!!currentUser} />
+        <PublicHeader signedIn={false} />
       )}
 
       {isLoading && (
-        <p className="text-center text-slate-400 mt-16 text-sm">Loading review...</p>
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-slate-400 text-sm">Loading review...</p>
+        </div>
       )}
       {isError && (
-        <p className="text-center text-red-400 mt-16 font-mono text-sm">
-          {error.response?.status === 404
-            ? 'Review not found, or it has been set to private by its owner.'
-            : `Failed to load: ${error.message}`}
-        </p>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-md px-6">
+            <p className="text-red-400 font-mono text-sm mb-2">
+              {error.response?.status === 404
+                ? 'Review not found, or it has been set to private by its owner.'
+                : `Failed to load: ${error.message}`}
+            </p>
+            <p className="text-slate-500 text-xs">
+              {currentUser
+                ? 'Return to the Reviews list to pick another review.'
+                : 'If you have an account, sign in to see private reviews.'}
+            </p>
+          </div>
+        </div>
       )}
 
       {review && (
