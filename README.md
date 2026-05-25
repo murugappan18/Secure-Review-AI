@@ -223,12 +223,48 @@ Secure_Review/
 
 ---
 
+## Known limitations
+
+A few honest notes on what the current free-tier deployment does and doesn't do well.
+
+### Opensource PRs run in "diff-only" mode
+
+The codebase tools (`search_code`, `find_callers`, `find_pattern`, `get_function`, …) all hit a per-user `CodeChunk` index that's only populated when you click **Index** on a repo from your Dashboard. Indexing requires cloning the repo via your OAuth token — which means **only repos you own / collaborate on can be indexed**.
+
+When you paste a PR URL pointing at a repo that's *not* in your indexed set (a third-party / opensource PR), the agent works in **diff-only mode**:
+
+- **Phase 1 (Understand diff)** — works fully (GitHub API).
+- **Phase 2 (Gather context)** — typically returns an empty or minimal response. The codebase tools have nothing to search.
+- **Phase 3 (Reason exploitability)** — works on the PR's patch hunks + the seeded security KB. Catches obvious patterns (eval, hardcoded secrets, raw SQL concat, etc.) well.
+- **Phase 4 (Compare patterns)** — typically empty. The orchestrator's built-in fallback uses the Phase 3 candidates directly so the review still produces findings.
+- **Phase 5 (Generate review)** — always works (pure synthesis).
+
+So findings on opensource PRs lean on **diff + security KB only** — no cross-file reasoning. Simple patterns get caught; subtle bugs that require knowing what surrounding code does are missed.
+
+**Workaround:** fork the repo to your own GitHub account, index the fork, then re-paste the PR URL. The agent matches by `owner/repo` so this works as long as you submit the PR URL against the fork (not the upstream).
+
+### LLM output variability
+
+The default free-tier model is `gemini-3.1-flash-lite` (500 requests/day, no card). It's a small model. Two known soft spots, both now mitigated server-side but worth knowing:
+
+- **`suggestedFix`** sometimes ships empty. The agent's post-processor now substitutes `"Manual review required — no obvious fix"` whenever the field comes back blank, so you'll never see a finding without a fix line.
+- **`references[]`** sometimes lands empty even when `lookup_cwe` ran successfully in Phase 3. The post-processor extracts the CWE / OWASP IDs from each finding's text, looks them up in the run's actual tool-call history, and attaches the canonical URLs. As a last resort it falls back to a canonical CWE/OWASP URL for the finding's category. Every finding ships with at least one reference URL.
+
+For higher-quality output, switch to **Claude Sonnet** or **Gemini 3 Pro** in Settings — they follow the strict-JSON instructions much more reliably.
+
+### Free-tier infrastructure
+
+- **Render** spins down after 15 min of inactivity → first request after idle takes ~30 s. UptimeRobot pings every 5 min to keep it warm during demos.
+- **MongoDB Atlas M0** is enough for the seeded security KB + your code chunks. Watch the 512 MB cap if you index very large repos.
+- **Gemini Flash Lite 500 RPD** is plenty for casual use. A single review consumes ~30 requests (5 phases × ~6 LLM round-trips). Heavy use can exhaust the quota — switch providers in Settings if you hit a 429.
+
+---
+
 ## Roadmap
 
 Features I'd add next (any pull requests welcome):
 
 - **Monaco diff viewer** — true side-by-side rendering with finding markers on the changed lines (`DiffViewer` is currently a file-impact summary).
-- **OAuth-based GitHub PR commenting** — post the agent's findings as a PR review comment back on GitHub.
 - **Multi-org support** — separate orgs sharing an indexed monorepo.
 - **Webhook-driven reviews** — auto-review on PR open instead of manual submit.
 - **Per-user usage analytics** — visualize each user's monthly Gemini / Claude usage.

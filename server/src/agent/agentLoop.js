@@ -300,7 +300,7 @@ export async function runReview({
         if (v.success) {
           review.summary = v.data.summary;
           review.riskAssessment = v.data.riskAssessment;
-          review.findings = v.data.findings;
+          review.findings = enrichFindings(v.data.findings, allToolCalls);
         } else {
           const partial = (final?.findings ?? []).filter(
             (f) => FindingSchema.safeParse(f).success
@@ -308,7 +308,7 @@ export async function runReview({
           review.summary =
             final?.summary ?? 'Review completed with partial schema validation.';
           review.riskAssessment = final?.riskAssessment ?? 'medium';
-          review.findings = partial;
+          review.findings = enrichFindings(partial, allToolCalls);
           review.statusMessage =
             'Phase 5 output partially valid: ' +
             v.error.issues
@@ -361,6 +361,155 @@ export async function runReview({
     if (!isStopped) throw err; // Stopped is a clean exit; failure should still throw
     return review;
   }
+}
+
+// ---------------------------------------------------------------------
+// Post-processing: fill the two fields the LLM most commonly drops or
+// leaves blank — `suggestedFix` and `references[]`. The Phase 5 prompt
+// instructs the model strongly, but smaller free-tier models (Gemini
+// Flash Lite especially) sometimes still skip them. We patch the gaps
+// here so every finding the user sees has a usable hint and at least
+// one canonical reference URL.
+// ---------------------------------------------------------------------
+function enrichFindings(findings, toolCalls) {
+  if (!Array.isArray(findings)) return findings;
+
+  // Index the security KB lookups that actually fired this run, so we
+  // can attach references[] derived from real tool calls (not
+  // hallucinated URLs) for findings the LLM forgot to cite.
+  const cweById = new Map(); // 'CWE-79' -> { references: string[], title }
+  const owaspById = new Map(); // 'A03:2021' -> { url, references }
+
+  for (const tc of toolCalls ?? []) {
+    if (!tc?.result || tc.error) continue;
+    if (tc.tool === 'lookup_cwe' && tc.result.found) {
+      const id = String(tc.result.identifier ?? '').toUpperCase();
+      if (id && !cweById.has(id)) {
+        cweById.set(id, {
+          title: tc.result.title,
+          references: Array.isArray(tc.result.references)
+            ? tc.result.references
+            : [],
+        });
+      }
+    } else if (
+      tc.tool === 'search_owasp' &&
+      Array.isArray(tc.result.results)
+    ) {
+      for (const r of tc.result.results) {
+        const id = r?.identifier;
+        if (id && !owaspById.has(id)) {
+          owaspById.set(id, {
+            url: r.url,
+            references: Array.isArray(r.references) ? r.references : [],
+          });
+        }
+      }
+    }
+  }
+
+  return findings.map((f) => {
+    const out = { ...f };
+
+    // ---- suggestedFix fallback ----
+    if (!out.suggestedFix || !String(out.suggestedFix).trim()) {
+      out.suggestedFix = 'Manual review required — no obvious fix';
+    }
+
+    // ---- references[] enrichment ----
+    if (!Array.isArray(out.references) || out.references.length === 0) {
+      out.references = deriveReferencesFor(out, cweById, owaspById);
+    }
+
+    return out;
+  });
+}
+
+function deriveReferencesFor(finding, cweById, owaspById) {
+  const refs = new Set();
+  const text = [
+    finding.title,
+    finding.description,
+    finding.category,
+    finding.exploitabilityNotes,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  // 1. Pull URLs from any CWE the agent actually looked up.
+  const cweMentions = new Set();
+  for (const m of text.matchAll(/CWE[-\s]?(\d+)/gi)) {
+    cweMentions.add(`CWE-${m[1]}`);
+  }
+  for (const id of cweMentions) {
+    if (cweById.has(id)) {
+      for (const r of cweById.get(id).references) {
+        if (typeof r === 'string' && /^https?:\/\//.test(r)) refs.add(r);
+      }
+    }
+    // Always include the canonical MITRE URL for the CWE itself.
+    const num = id.replace(/^CWE-/, '');
+    refs.add(`https://cwe.mitre.org/data/definitions/${num}.html`);
+  }
+
+  // 2. Pull URLs from any OWASP entry the agent actually looked up.
+  for (const m of text.matchAll(/A\d{2}:\d{4}/g)) {
+    const id = m[0];
+    if (owaspById.has(id)) {
+      const entry = owaspById.get(id);
+      if (entry.url) refs.add(entry.url);
+      for (const r of entry.references) {
+        if (typeof r === 'string' && /^https?:\/\//.test(r)) refs.add(r);
+      }
+    }
+  }
+
+  // 3. Last-resort canonical reference based on the finding's category.
+  if (refs.size === 0) {
+    const fb = canonicalRefForCategory(finding.category);
+    if (fb) refs.add(fb);
+  }
+
+  return [...refs].slice(0, 4);
+}
+
+// Maps a category slug to its canonical CWE/OWASP URL. Used only when
+// the LLM produced a finding with no references AND no CWE-NN mention
+// we could resolve from tool calls.
+function canonicalRefForCategory(category) {
+  if (!category) return 'https://owasp.org/www-project-top-ten/';
+  const cat = String(category).toLowerCase().replace(/[\s-]/g, '_');
+  const map = {
+    xss: 'https://cwe.mitre.org/data/definitions/79.html',
+    sql_injection: 'https://cwe.mitre.org/data/definitions/89.html',
+    code_injection: 'https://cwe.mitre.org/data/definitions/94.html',
+    command_injection: 'https://cwe.mitre.org/data/definitions/78.html',
+    os_command_injection: 'https://cwe.mitre.org/data/definitions/78.html',
+    hardcoded_secret: 'https://cwe.mitre.org/data/definitions/798.html',
+    hardcoded_credentials: 'https://cwe.mitre.org/data/definitions/798.html',
+    prototype_pollution: 'https://cwe.mitre.org/data/definitions/1321.html',
+    path_traversal: 'https://cwe.mitre.org/data/definitions/22.html',
+    open_redirect: 'https://cwe.mitre.org/data/definitions/601.html',
+    insecure_deserialization: 'https://cwe.mitre.org/data/definitions/502.html',
+    deserialization: 'https://cwe.mitre.org/data/definitions/502.html',
+    weak_crypto: 'https://cwe.mitre.org/data/definitions/327.html',
+    weak_cryptography: 'https://cwe.mitre.org/data/definitions/327.html',
+    ssti: 'https://cwe.mitre.org/data/definitions/1336.html',
+    server_side_template_injection:
+      'https://cwe.mitre.org/data/definitions/1336.html',
+    csrf: 'https://cwe.mitre.org/data/definitions/352.html',
+    info_disclosure: 'https://cwe.mitre.org/data/definitions/200.html',
+    information_disclosure: 'https://cwe.mitre.org/data/definitions/200.html',
+    sensitive_data_exposure:
+      'https://cwe.mitre.org/data/definitions/200.html',
+    insecure_random: 'https://cwe.mitre.org/data/definitions/338.html',
+    xxe: 'https://cwe.mitre.org/data/definitions/611.html',
+    ssrf: 'https://cwe.mitre.org/data/definitions/918.html',
+    broken_access_control: 'https://cwe.mitre.org/data/definitions/284.html',
+    authorization: 'https://cwe.mitre.org/data/definitions/285.html',
+    authentication: 'https://cwe.mitre.org/data/definitions/287.html',
+  };
+  return map[cat] ?? 'https://owasp.org/www-project-top-ten/';
 }
 
 // Race a promise against a timer.

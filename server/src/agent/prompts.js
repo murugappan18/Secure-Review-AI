@@ -204,6 +204,24 @@ For each finding, emit a polished record. Re-validate against your evidence:
 - Severity must match impact: RCE = critical, info-disclosure of secret =
   high, prototype pollution with limited reach = medium, etc.
 
+# MANDATORY field rules (the user explicitly relies on these — DO NOT skip)
+
+1. **suggestedFix** — Every finding MUST have a non-empty \`suggestedFix\`.
+   - If you have a concrete fix, include a short code example (5-20 lines).
+   - If you GENUINELY cannot suggest a fix (e.g. design-level issue, missing
+     context), write the literal string:
+       "Manual review required — no obvious fix"
+   - Never leave this field blank, never omit it, never write just "fix it".
+
+2. **references** — Every finding MUST have at least ONE URL in
+   \`references\` pointing to canonical guidance.
+   - Prefer URLs from the \`lookup_cwe\` / \`search_owasp\` tool results you
+     captured in earlier phases — those are already verified.
+   - For any CWE you cite, include its canonical URL:
+       https://cwe.mitre.org/data/definitions/{N}.html
+   - For any OWASP entry, include its canonical URL too.
+   - Never ship a finding with an empty \`references\` array.
+
 Output STRICT JSON matching this exact shape:
 
 {
@@ -219,7 +237,7 @@ Output STRICT JSON matching this exact shape:
       "startLine": 0,
       "endLine": 0,
       "codeSnippet": "<verbatim vulnerable code>",
-      "suggestedFix": "<concrete code example showing how to fix>",
+      "suggestedFix": "<concrete code example, OR 'Manual review required — no obvious fix'>",
       "references": ["https://cwe.mitre.org/data/definitions/...", "https://owasp.org/..."],
       "confidence": 0.0,
       "exploitabilityNotes": "<1-2 sentences on how an attacker would actually exploit this>"
