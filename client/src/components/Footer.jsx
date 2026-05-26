@@ -35,6 +35,7 @@ const LINKS = {
   github: 'https://github.com/murugappan18',
   portfolio: 'https://murugappan18.github.io/my-portfolio',
   linkedin: 'https://www.linkedin.com/in/murugappan-p',
+  email: 'mailto:murugappanp24@gmail.com'
 };
 
 export default function Footer() {
@@ -56,7 +57,7 @@ export default function Footer() {
           </a>
           <span aria-hidden="true" className="text-slate-700 hidden sm:inline">·</span>
           <a
-            href={`${LINKS.linkedin}/`}
+            href={`${LINKS.email}/`}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
