@@ -71,7 +71,7 @@ export async function chat({ messages, tools, model }) {
     model ||
     (hasUserContext() ? getUserModel('groq') : null) ||
     process.env.GROQ_MODEL ||
-    'llama-3.3-70b-versatile';
+    'llama-3.1-8b-instant';
   const client = new Groq({ apiKey });
 
   let response;
