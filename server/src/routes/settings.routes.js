@@ -18,19 +18,17 @@ const AVAILABLE_MODELS = {
   ],
   claude: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-5'],
   groq: [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-70b-versatile',
     'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
+    'llama-3.3-70b-versatile',
   ],
 };
 
 // Default model per provider (used when the user hasn't picked one). Matches
 // User.statics.DEFAULT_MODELS — duplicated here to avoid an extra import dance.
 const DEFAULT_MODELS = {
-  gemini: 'gemini-3.1-flash-lite',
-  claude: 'claude-sonnet-4-5',
-  groq: 'llama-3.3-70b-versatile',
+  gemini: "gemini-3.1-flash-lite",
+  claude: "claude-sonnet-4-5",
+  groq: "llama-3.1-8b-instant",
 };
 
 function serializeSettings(user) {
