@@ -8,7 +8,7 @@ export const PROVIDERS = ['gemini', 'claude', 'groq'];
 const DEFAULT_MODELS = {
   gemini: 'gemini-3.1-flash-lite',
   claude: 'claude-sonnet-4-5',
-  groq: 'llama-3.3-70b-versatile',
+  groq: 'llama-3.1-8b-instant',
 };
 
 // Per-provider stored secret. `encryptedKey` is set:false so it never
