@@ -285,9 +285,15 @@ const FIND_PATTERN = {
     required: ['pattern'],
   },
   async handler(args, ctx) {
+    // Accept multiple common aliases for the pattern parameter emitted by
+    // lightweight LLMs (e.g. "query", "q"). Normalize here so handlers
+    // are resilient to slightly-wrong arg names.
+    const patternArg = args.pattern ?? args.query ?? args.q ?? null;
+    if (!patternArg) return { error: 'missing required parameter: pattern' };
+
     let regex;
     try {
-      regex = new RegExp(args.pattern, 'i');
+      regex = new RegExp(patternArg, 'i');
     } catch (err) {
       return { error: `Invalid regex: ${err.message}` };
     }
@@ -300,7 +306,7 @@ const FIND_PATTERN = {
       .limit(limit)
       .lean();
     return {
-      pattern: args.pattern,
+      pattern: patternArg,
       count: chunks.length,
       matches: chunks.map((c) => {
         const m = c.content.match(regex);
@@ -314,6 +320,7 @@ const FIND_PATTERN = {
       }),
     };
   },
+
 };
 
 // ---------------------------------------------------------------------

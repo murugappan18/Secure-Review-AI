@@ -177,13 +177,56 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   function coerceArgsToSchema(calls) {
     if (!availableTools) return calls;
     const byName = new Map((availableTools ?? []).map((t) => [t.name, t]));
+
+    // Known aliases for common parameter names.
+    const ALIASES = {
+      pattern: ["query", "q", "regex", "re", "pat"],
+      startLine: ["start", "start_line", "startline", "from"],
+      endLine: ["end", "end_line", "endline", "to"],
+      prNumber: ["pr_number", "pr", "number", "prnum"],
+    };
+
+    function normalizeKey(k) {
+      return String(k).toLowerCase().replace(/[_\-]/g, "");
+    }
+
     for (const call of calls) {
       const toolDef = byName.get(call.name);
       const props =
         toolDef?.function?.parameters?.properties ??
         toolDef?.parameters?.properties ??
         {};
+
+      // Remap aliases to expected property names when appropriate.
       if (call.arguments && typeof call.arguments === "object") {
+        for (const expectedKey of Object.keys(props)) {
+          if (call.arguments[expectedKey] !== undefined) continue;
+          const aliases = ALIASES[expectedKey] ?? [];
+          // Try explicit aliases first.
+          let found = false;
+          for (const a of aliases) {
+            if (call.arguments[a] !== undefined) {
+              call.arguments[expectedKey] = call.arguments[a];
+              delete call.arguments[a];
+              found = true;
+              break;
+            }
+          }
+          if (found) continue;
+          // Fallback heuristic: match by normalized key (snake/camel/no-sep)
+          const expectedNormalized = normalizeKey(expectedKey);
+          for (const existingKey of Object.keys(call.arguments)) {
+            if (normalizeKey(existingKey) === expectedNormalized) {
+              call.arguments[expectedKey] = call.arguments[existingKey];
+              if (existingKey !== expectedKey)
+                delete call.arguments[existingKey];
+              break;
+            }
+          }
+        }
+
+        // Now coerce numeric-like strings to numbers for any property that
+        // expects a number.
         for (const [k, v] of Object.entries(call.arguments)) {
           const expected = props[k]?.type;
           if (
