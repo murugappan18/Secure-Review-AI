@@ -148,24 +148,52 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   const parsed = parseLlamaToolUseFailure(failed);
   if (!parsed || parsed.length === 0) return null;
 
+  // Coerce numeric-like string arguments to numbers based on the tool
+  // parameter schema. Llama models often emit numbers as quoted strings
+  // (e.g. "24"); when the tool schema expects a number, convert it so
+  // downstream validation/execution doesn't fail.
+  function coerceArgsToSchema(calls) {
+    if (!availableTools) return calls;
+    const byName = new Map((availableTools ?? []).map((t) => [t.name, t]));
+    for (const call of calls) {
+      const toolDef = byName.get(call.name);
+      const props = toolDef?.function?.parameters?.properties ?? toolDef?.parameters?.properties ?? {};
+      if (call.arguments && typeof call.arguments === 'object') {
+        for (const [k, v] of Object.entries(call.arguments)) {
+          const expected = props[k]?.type;
+          if (
+            expected === 'number' &&
+            typeof v === 'string' &&
+            /^-?\d+(?:\.\d+)?$/.test(v.trim())
+          ) {
+            call.arguments[k] = Number(v);
+          }
+        }
+      }
+    }
+    return calls;
+  }
+
+  const coerced = coerceArgsToSchema(parsed);
+
   // Validate every parsed call's name against the actual tool registry
   // that was passed in this request. If ALL are real tools, the model
   // genuinely meant to call them — Groq's parser just choked on the
   // text format. Return them as proper tool calls.
   const validNames = new Set((availableTools ?? []).map((t) => t.name));
   const allValid =
-    validNames.size > 0 && parsed.every((c) => validNames.has(c.name));
+    validNames.size > 0 && coerced.every((c) => validNames.has(c.name));
 
   if (allValid) {
     console.warn(
-      `[groq] recovered ${parsed.length} tool call(s) from tool_use_failed: ` +
-        parsed.map((c) => c.name).join(', ')
+      `[groq] recovered ${coerced.length} tool call(s) from tool_use_failed: ` +
+        coerced.map((c) => c.name).join(', ')
     );
     return {
       provider: 'groq',
       model: modelName,
       text: null,
-      toolCalls: parsed.map((c, i) => ({
+      toolCalls: coerced.map((c, i) => ({
         id: synthToolCallId(c.name, i),
         name: c.name,
         arguments: c.arguments,
@@ -182,7 +210,7 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   // failure mode of llama-3.x-8b-instant). The first call's args is the
   // intended JSON answer — return it as text content so the agent loop
   // treats it as the phase's final output.
-  const first = parsed[0];
+  const first = coerced[0];
   console.warn(
     `[groq] recovered final-answer JSON from tool_use_failed: ` +
       `model emitted '${first.name}' which isn't a registered tool ` +
