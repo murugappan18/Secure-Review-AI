@@ -1,10 +1,10 @@
-import Groq from 'groq-sdk';
-import { parseArgs, synthToolCallId } from './types.js';
+import Groq from "groq-sdk";
+import { parseArgs, synthToolCallId } from "./types.js";
 import {
   getUserApiKey,
   getUserModel,
   hasUserContext,
-} from '../../utils/userContext.js';
+} from "../../utils/userContext.js";
 
 // Groq exposes an OpenAI-compatible chat completions API, so the message and
 // tool-call shapes are essentially OpenAI's.
@@ -15,15 +15,15 @@ import {
 
 function toGroqMessages(messages) {
   return messages.map((m) => {
-    if (m.role === 'system' || m.role === 'user') {
+    if (m.role === "system" || m.role === "user") {
       return { role: m.role, content: m.content };
     }
-    if (m.role === 'assistant') {
-      const base = { role: 'assistant', content: m.content ?? null };
+    if (m.role === "assistant") {
+      const base = { role: "assistant", content: m.content ?? null };
       if (m.toolCalls?.length) {
         base.tool_calls = m.toolCalls.map((tc) => ({
           id: tc.id,
-          type: 'function',
+          type: "function",
           function: {
             name: tc.name,
             arguments: JSON.stringify(tc.arguments ?? {}),
@@ -32,12 +32,12 @@ function toGroqMessages(messages) {
       }
       return base;
     }
-    if (m.role === 'tool') {
+    if (m.role === "tool") {
       return {
-        role: 'tool',
+        role: "tool",
         tool_call_id: m.toolCallId,
         content:
-          typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          typeof m.content === "string" ? m.content : JSON.stringify(m.content),
       };
     }
     return m;
@@ -47,7 +47,7 @@ function toGroqMessages(messages) {
 function toGroqTools(tools) {
   if (!tools?.length) return undefined;
   return tools.map((t) => ({
-    type: 'function',
+    type: "function",
     function: {
       name: t.name,
       description: t.description,
@@ -59,19 +59,20 @@ function toGroqTools(tools) {
 export async function chat({ messages, tools, model }) {
   // BYOK in HTTP requests; env fallback for dev scripts only.
   const apiKey = hasUserContext()
-    ? getUserApiKey('groq')
+    ? getUserApiKey("groq")
     : process.env.GROQ_API_KEY;
   if (!apiKey) {
-    const err = new Error('[groq] no Groq API key available');
-    err.code = 'NO_USER_API_KEY';
+    const err = new Error("[groq] no Groq API key available");
+    err.code = "NO_USER_API_KEY";
     throw err;
   }
 
   const modelName =
     model ||
-    (hasUserContext() ? getUserModel('groq') : null) ||
+    (hasUserContext() ? getUserModel("groq") : null) ||
     process.env.GROQ_MODEL ||
-    'llama-3.1-8b-instant';
+    "llama-3.1-8b-instant";
+  console.log(`[groq] chosen model: ${modelName}`);
   const client = new Groq({ apiKey });
 
   let response;
@@ -80,7 +81,7 @@ export async function chat({ messages, tools, model }) {
       model: modelName,
       messages: toGroqMessages(messages),
       tools: toGroqTools(tools),
-      tool_choice: tools?.length ? 'auto' : undefined,
+      tool_choice: tools?.length ? "auto" : undefined,
     });
   } catch (err) {
     // Llama-3.x on Groq occasionally emits tool calls as raw text in the
@@ -109,14 +110,14 @@ export async function chat({ messages, tools, model }) {
     })) ?? [];
 
   const finishReason =
-    choice?.finish_reason === 'tool_calls'
-      ? 'tool_use'
-      : choice?.finish_reason === 'length'
-        ? 'length'
-        : 'stop';
+    choice?.finish_reason === "tool_calls"
+      ? "tool_use"
+      : choice?.finish_reason === "length"
+        ? "length"
+        : "stop";
 
   return {
-    provider: 'groq',
+    provider: "groq",
     model: modelName,
     text: msg?.content ?? null,
     toolCalls,
@@ -142,11 +143,32 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   // Fall back to err.response?.data for the raw axios case just in case.
   const status = err?.status ?? err?.response?.status;
   const errBody = err?.error ?? err?.response?.data?.error;
-  if (status !== 400 || errBody?.code !== 'tool_use_failed') return null;
+  if (status !== 400 || errBody?.code !== "tool_use_failed") return null;
 
   const failed = errBody.failed_generation;
   const parsed = parseLlamaToolUseFailure(failed);
-  if (!parsed || parsed.length === 0) return null;
+  if (!parsed || parsed.length === 0) {
+    // Sometimes the model emits a final-answer JSON blob interleaved with
+    // malformed tool tags, or the failed_generation contains a balanced
+    // JSON object somewhere in the string. As a last resort, try to extract
+    // a balanced JSON value from the raw failed_generation and treat it as
+    // the phase's final text answer.
+    const maybeJson = extractBalancedJson(String(failed));
+    if (maybeJson) {
+      console.warn(
+        "[groq] recovered final-answer JSON directly from failed_generation",
+      );
+      return {
+        provider: "groq",
+        model: modelName,
+        text: maybeJson,
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { inputTokens: 0, outputTokens: 0 },
+      };
+    }
+    return null;
+  }
 
   // Coerce numeric-like string arguments to numbers based on the tool
   // parameter schema. Llama models often emit numbers as quoted strings
@@ -157,13 +179,16 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
     const byName = new Map((availableTools ?? []).map((t) => [t.name, t]));
     for (const call of calls) {
       const toolDef = byName.get(call.name);
-      const props = toolDef?.function?.parameters?.properties ?? toolDef?.parameters?.properties ?? {};
-      if (call.arguments && typeof call.arguments === 'object') {
+      const props =
+        toolDef?.function?.parameters?.properties ??
+        toolDef?.parameters?.properties ??
+        {};
+      if (call.arguments && typeof call.arguments === "object") {
         for (const [k, v] of Object.entries(call.arguments)) {
           const expected = props[k]?.type;
           if (
-            expected === 'number' &&
-            typeof v === 'string' &&
+            expected === "number" &&
+            typeof v === "string" &&
             /^-?\d+(?:\.\d+)?$/.test(v.trim())
           ) {
             call.arguments[k] = Number(v);
@@ -187,10 +212,10 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   if (allValid) {
     console.warn(
       `[groq] recovered ${coerced.length} tool call(s) from tool_use_failed: ` +
-        coerced.map((c) => c.name).join(', ')
+        coerced.map((c) => c.name).join(", "),
     );
     return {
-      provider: 'groq',
+      provider: "groq",
       model: modelName,
       text: null,
       toolCalls: coerced.map((c, i) => ({
@@ -198,7 +223,7 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
         name: c.name,
         arguments: c.arguments,
       })),
-      finishReason: 'tool_use',
+      finishReason: "tool_use",
       // Groq didn't report usage on the failed response.
       usage: { inputTokens: 0, outputTokens: 0 },
     };
@@ -214,15 +239,15 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
   console.warn(
     `[groq] recovered final-answer JSON from tool_use_failed: ` +
       `model emitted '${first.name}' which isn't a registered tool ` +
-      `(available: ${[...validNames].join(', ') || 'none'}). ` +
-      `Treating the inner JSON as the phase's final text answer.`
+      `(available: ${[...validNames].join(", ") || "none"}). ` +
+      `Treating the inner JSON as the phase's final text answer.`,
   );
   return {
-    provider: 'groq',
+    provider: "groq",
     model: modelName,
     text: JSON.stringify(first.arguments),
     toolCalls: [],
-    finishReason: 'stop',
+    finishReason: "stop",
     usage: { inputTokens: 0, outputTokens: 0 },
   };
 }
@@ -236,7 +261,7 @@ function tryRecoverFromToolUseFailure(err, modelName, availableTools) {
 //   - Multiple calls in the same blob.
 //   - Trailing junk after the last closing tag.
 function parseLlamaToolUseFailure(text) {
-  if (!text || typeof text !== 'string') return null;
+  if (!text || typeof text !== "string") return null;
   const calls = [];
   // `>?` makes the closing-bracket of the opening tag optional so we
   // catch BOTH formats. \s* on either side handles whitespace variants.
@@ -265,7 +290,7 @@ function parseLlamaToolUseFailure(text) {
 // Walk a string starting at a '{' and return the balanced JSON object,
 // honoring string-literal escapes. Returns null if no balanced object.
 function extractBalancedJson(text) {
-  if (!text || text[0] !== '{') return null;
+  if (!text || text[0] !== "{") return null;
   let depth = 0;
   let inString = false;
   let escape = false;
@@ -275,7 +300,7 @@ function extractBalancedJson(text) {
       escape = false;
       continue;
     }
-    if (c === '\\') {
+    if (c === "\\") {
       escape = true;
       continue;
     }
@@ -284,8 +309,8 @@ function extractBalancedJson(text) {
       continue;
     }
     if (inString) continue;
-    if (c === '{') depth++;
-    else if (c === '}') {
+    if (c === "{") depth++;
+    else if (c === "}") {
       depth--;
       if (depth === 0) return text.slice(0, i + 1);
     }
