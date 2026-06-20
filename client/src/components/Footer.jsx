@@ -33,7 +33,7 @@ function Linkedin({ className }) {
 
 const LINKS = {
   github: 'https://github.com/murugappan18',
-  portfolio: 'https://murugappan18.github.io/my-portfolio',
+  portfolio: 'https://www.murugappanthedev.me',
   linkedin: 'https://www.linkedin.com/in/murugappan-p',
   email: 'mailto:murugappanp24@gmail.com'
 };
