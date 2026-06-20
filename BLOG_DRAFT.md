@@ -204,4 +204,4 @@ If you find a bug, a missing CWE entry, or have a feature in mind — open an is
 
 ---
 
-*Built solo over two weeks with help of an AI Assistants. Happy to chat about agentic patterns, MCP, or what it takes to ship an agentic app on $0/month — find me on my [Portfolio](https://murugappan18.github.io/my-portfolio) and [LinkedIn](https://www.linkedin.com/in/murugappan-p).*
+*Built solo over two weeks with help of an AI Assistants. Happy to chat about agentic patterns, MCP, or what it takes to ship an agentic app on $0/month — find me on my [Portfolio](https://www.murugappanthedev.me) and [LinkedIn](https://www.linkedin.com/in/murugappan-p).*
